@@ -20,11 +20,11 @@ from news_agent.config import (
 # ── get_default_config ─────────────────────────────────────────────────────
 
 
-def test_default_config_5_sources() -> None:
+def test_default_config_3_sources() -> None:
     cfg = get_default_config()
-    assert len(cfg.sources) == 5
+    assert len(cfg.sources) == 3
     domains = {s.domain for s in cfg.sources}
-    assert domains == {"ai_tech", "programming", "arknights", "yuri_gl", "mad_amv"}
+    assert domains == {"github_trending", "programming", "bilibili_hot"}
 
 
 # ── roundtrip ──────────────────────────────────────────────────────────────
@@ -37,8 +37,8 @@ def test_roundtrip_save_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         rsshub_url="http://custom:1200",
     )
     cfg.sources = [
-        SourceEntry(type="rss", url="https://example.com/rss", domain="ai_tech"),
-        SourceEntry(type="html", url="https://example.com/wiki", domain="arknights"),
+        SourceEntry(type="rss", url="https://example.com/rss", domain="programming"),
+        SourceEntry(type="rsshub", url="/bilibili/popular/all", domain="bilibili_hot"),
     ]
     config_file = tmp_path / "config.yaml"
     save_config(cfg, config_file)
@@ -47,8 +47,8 @@ def test_roundtrip_save_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert loaded.cost_ceiling_daily_tokens == 10000
     assert loaded.rsshub_url == "http://custom:1200"
     assert len(loaded.sources) == 2
-    assert loaded.sources[0].domain == "ai_tech"
-    assert loaded.sources[1].domain == "arknights"
+    assert loaded.sources[0].domain == "programming"
+    assert loaded.sources[1].domain == "bilibili_hot"
 
 
 # ── load_config edge cases ─────────────────────────────────────────────────
@@ -88,7 +88,7 @@ def test_invalid_domain_skipped(tmp_path: Path, caplog: pytest.LogCaptureFixture
     data = {
         "sources": {
             "invalid_xyz": [{"type": "rss", "url": "https://example.com/rss"}],
-            "ai_tech": [{"type": "rss", "url": "https://hnrss.org/frontpage"}],
+            "programming": [{"type": "rss", "url": "https://hnrss.org/frontpage"}],
         }
     }
     with open(invalid_path, "w", encoding="utf-8") as f:

@@ -38,17 +38,27 @@ _MOCK_FORTUNE = {
 def _make_config_with_sources() -> Config:
     cfg = Config()
     cfg.sources = [
-        SourceEntry(type="rss", url="https://example.com/rss", domain="ai_tech"),
-        SourceEntry(type="rss", url="https://example.com/prog", domain="programming"),
-        SourceEntry(type="html", url="https://example.com/ark", domain="arknights"),
-        SourceEntry(type="api", url="https://api.bgm.tv", domain="yuri_gl"),
-        SourceEntry(type="rsshub", url="/mad", domain="mad_amv"),
+        SourceEntry(
+            type="github_trending",
+            url="https://github.com/trending?since=daily",
+            domain="github_trending",
+        ),
+        SourceEntry(
+            type="rss",
+            url="https://example.com/prog",
+            domain="programming",
+        ),
+        SourceEntry(
+            type="bilibili_hot",
+            url="https://api.bilibili.com/x/web-interface/search/square?limit=10",
+            domain="bilibili_hot",
+        ),
     ]
     return cfg
 
 
 def test_run_curator_returns_all_domains(tmp_db_path: Path) -> None:
-    """All 5 domains present in output, headlines_only_mode=False, daily_summary non-empty."""
+    """All 3 domains present in output, headlines_only_mode=False, daily_summary non-empty."""
     init_db(tmp_db_path)
     cfg = _make_config_with_sources()
 
@@ -58,7 +68,7 @@ def test_run_curator_returns_all_domains(tmp_db_path: Path) -> None:
                 with patch("news_agent.curator._dispatch_fetcher") as mock_dispatch:
                     mock_dispatch.return_value = [
                         dict(FAKE_ARTICLE, domain=d)
-                        for d in ["ai_tech", "programming", "arknights", "yuri_gl", "mad_amv"]
+                        for d in ["github_trending", "programming", "bilibili_hot"]
                     ]
                     result = run_curator(cfg, db_path=tmp_db_path)
 
@@ -113,6 +123,6 @@ def test_run_curator_graceful_degradation(tmp_db_path: Path) -> None:
                 ):
                     result = run_curator(cfg, db_path=tmp_db_path)
 
-    assert call_count == 5
+    assert call_count == 3
     assert "articles_by_domain" in result
     assert not result["headlines_only_mode"]

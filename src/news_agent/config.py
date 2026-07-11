@@ -27,8 +27,10 @@ logger = logging.getLogger("news_agent")
 # ---------------------------------------------------------------------------
 # Allowed values
 # ---------------------------------------------------------------------------
-_VALID_DOMAINS = frozenset({"ai_tech", "programming", "arknights", "yuri_gl", "mad_amv"})
-_VALID_TYPES = frozenset({"rss", "rsshub", "html", "api", "mediawiki_api"})
+_VALID_DOMAINS = frozenset({"github_trending", "programming", "bilibili_hot"})
+_VALID_TYPES = frozenset(
+    {"rss", "rsshub", "html", "api", "mediawiki_api", "bilibili_hot", "github_trending"}
+)
 
 
 # ---------------------------------------------------------------------------
@@ -80,29 +82,22 @@ class Config:
 
 _DEFAULT_SOURCES: list[SourceEntry] = [
     SourceEntry(
-        type="rss",
-        url="https://hnrss.org/frontpage",
-        domain="ai_tech",
+        type="github_trending",
+        url="https://github.com/trending?since=daily",
+        domain="github_trending",
+        params={},
     ),
     SourceEntry(
         type="rss",
         url="https://hnrss.org/frontpage?points=50",
         domain="programming",
+        params={},
     ),
     SourceEntry(
-        type="mediawiki_api",
-        url="https://prts.wiki/api.php",
-        domain="arknights",
-    ),
-    SourceEntry(
-        type="api",
-        url="https://api.bgm.tv/v0/subjects?type=2&tag=百合",
-        domain="yuri_gl",
-    ),
-    SourceEntry(
-        type="rsshub",
-        url="/bilibili/popular/all",
-        domain="mad_amv",
+        type="bilibili_hot",
+        url="https://api.bilibili.com/x/web-interface/search/square?limit=10",
+        domain="bilibili_hot",
+        params={},
     ),
 ]
 

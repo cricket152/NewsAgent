@@ -50,56 +50,29 @@ conversation_retention_days: 30
 # Maximum conversation context before truncation (effective tokens, approximate).
 conversation_max_tokens: 64000
 
-##############################################################################
-# News Sources — grouped by interest domain.
+ ##############################################################################
+# News Sources — flat list, one entry per domain.
 # Each source has:
-#   type:     rss | rsshub | html | api
+#   type:     rss | rsshub | html | api | mediawiki_api | bilibili_hot | github_trending
 #   url:      fetch URL (for rsshub type, the path is appended to rsshub_base)
-#   limit:    max items per fetch (default 20)
+#   domain:   interest domain (github_trending | programming | bilibili_hot)
+#   params:   optional per-source extra parameters (default {})
 ##############################################################################
 
 sources:
-  # AI / 科技前沿
-  ai_tech:
-    - type: rss
-      url: "https://hnrss.org/frontpage"
-      limit: 20
-    - type: rsshub
-      url: "/36kr/newsflashes"
-      limit: 10
-    - type: rss
-      url: "http://export.arxiv.org/rss/cs.AI"
-      limit: 10
+  - type: github_trending
+    url: https://github.com/trending?since=daily
+    domain: github_trending
+    params: {}
 
-  # 编程 / 开源动态
-  programming:
-    - type: rss
-      url: "https://hnrss.org/frontpage?points=50"
-      limit: 15
-    - type: rss
-      url: "https://www.reddit.com/r/programming/.rss"
-      limit: 10
+  - type: rss
+    url: https://hnrss.org/frontpage?points=50
+    domain: programming
+    params: {}
 
-  # 明日方舟
-  arknights:
-    - type: mediawiki_api
-      url: "https://prts.wiki/api.php"
-      limit: 10
-    - type: rsshub
-      url: "/nga/forum/607"
-      limit: 10
+  - type: bilibili_hot
+    url: https://api.bilibili.com/x/web-interface/search/square?limit=10
+    domain: bilibili_hot
+    params: {}
 
-  # 百合
-  yuri_gl:
-    - type: api
-      url: "https://api.bgm.tv/v0/subjects"
-      limit: 10
-    - type: rss
-      url: "https://dmhy.org/topics/rss/rss.xml?keyword=百合"
-      limit: 10
 
-  # MAD・漫剪
-  mad_amv:
-    - type: rsshub
-      url: "/bilibili/popular/all"
-      limit: 10

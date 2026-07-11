@@ -86,7 +86,7 @@ def sample_source_api() -> SourceEntry:
 @pytest.fixture
 def sample_bundle() -> dict:
     """A fully populated daily-bundle dict (5 domains x 3 articles each)."""
-    domains = ["ai_tech", "programming", "arknights", "yuri_gl", "mad_amv"]
+    domains = ["github_trending", "programming", "bilibili_hot"]
     articles_by_domain: dict[str, list[dict]] = {}
     for d in domains:
         articles_by_domain[d] = [

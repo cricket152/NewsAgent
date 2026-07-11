@@ -80,6 +80,14 @@ def _dispatch_fetcher(
             from news_agent.fetchers.mediawiki import fetch_mediawiki_recent
 
             return fetch_mediawiki_recent(source)
+        elif source.type == "bilibili_hot":
+            from news_agent.fetchers.bilibili_hot import fetch_bilibili_hot
+
+            return fetch_bilibili_hot(source)
+        elif source.type == "github_trending":
+            from news_agent.fetchers.github_trending import fetch_github_trending
+
+            return fetch_github_trending(source)
         else:
             logger.warning(
                 "Unknown source type '%s' for %s", source.type, source.url

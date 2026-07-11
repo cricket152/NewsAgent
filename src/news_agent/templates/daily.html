@@ -97,13 +97,36 @@
 
   /* Muted text utility */
   .muted { color: #7a8a99; }
+
+  /* Domain header wrapper + toggle button */
+  .domain-header-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .section-toggle {
+    cursor: pointer;
+    border: none;
+    background: none;
+    font-size: 14px;
+    color: #666;
+    padding: 0 4px;
+    float: right;
+  }
+  .section-toggle:hover {
+    color: #2d8a3c;
+  }
 </style>
 </head>
 <body>
 
 {% set zodiac_emojis = {"鼠": "🐀", "牛": "🐂", "虎": "🐅", "兔": "🐇", "龙": "🐉", "蛇": "🐍", "马": "🐎", "羊": "🐐", "猴": "🐒", "鸡": "🐓", "狗": "🐕", "猪": "🐖"} %}
-{% set domain_labels = {"ai_tech": "AI / 科技前沿", "programming": "编程 / 开源", "arknights": "明日方舟", "yuri_gl": "百合 / GL", "mad_amv": "MAD / 漫剪"} %}
-{% set domain_order = ["ai_tech", "programming", "arknights", "yuri_gl", "mad_amv"] %}
+{% set domain_labels = {
+    "github_trending": "GitHub 项目推荐",
+    "programming": "编程 / 开源",
+    "bilibili_hot": "B站热搜榜"
+} %}
+{% set domain_order = ["github_trending", "programming", "bilibili_hot"] %}
 
 <div class="container">
 
@@ -172,7 +195,11 @@
     {% set articles = articles_by_domain.get(domain, []) %}
     {% if articles %}
     <div class="domain-section">
-      <div class="domain-heading">{{ domain_labels.get(domain, domain) }}</div>
+      <div class="domain-header-wrapper">
+        <div class="domain-heading">{{ domain_labels.get(domain, domain) }}</div>
+        <button class="section-toggle" onclick="toggleSection(this, 'section_{{ domain }}')">▼</button>
+      </div>
+      <div id="section_{{ domain }}">
       {% for article in articles[:5] %}
       <div class="article-row">
         <div class="article-title">
@@ -187,6 +214,7 @@
         </div>
       </div>
       {% endfor %}
+      </div>
     </div>
     {% endif %}
   {% endfor %}
@@ -197,6 +225,19 @@
 <div class="footer">
   由 news-agent 整理 · 数据源 RSSHub / 原始 RSS / Bangumi / 本地黄历 · 仅供个人学习研究
 </div>
+
+<script>
+function toggleSection(btn, sectionId) {
+    var section = document.getElementById(sectionId);
+    if (section.style.display === 'none') {
+        section.style.display = '';
+        btn.textContent = '▼';
+    } else {
+        section.style.display = 'none';
+        btn.textContent = '▶';
+    }
+}
+</script>
 
 </body>
 </html>
