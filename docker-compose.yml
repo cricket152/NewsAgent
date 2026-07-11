@@ -1,0 +1,19 @@
+# Local RSSHub for news-agent — primary source for Bilibili/Weibo/NGA feeds
+
+services:
+  rsshub:
+    image: diygod/rsshub:latest
+    container_name: news-agent-rsshub
+    restart: unless-stopped
+    ports:
+      - "1200:1200"
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: memory
+      CACHE_EXPIRE: 600
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:1200/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      start_period: 10s
+      retries: 6
+      timeout: 5s

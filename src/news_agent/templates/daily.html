@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>每日简报</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 14px; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Hiragino Sans GB", sans-serif;
+    line-height: 1.6;
+    color: #2c3e50;
+    background: #f7f9fa;
+    padding: 0;
+    min-height: 100vh;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #eef2f5; }
+  ::-webkit-scrollbar-thumb { background: #0e7c86; border-radius: 3px; }
+
+  /* Container */
+  .container { max-width: 768px; margin: 0 auto; padding: 16px 16px 80px; }
+
+  /* Header */
+  .header {
+    position: sticky; top: 0; z-index: 10;
+    background: linear-gradient(135deg, #e8f4f6 0%, #d4edf0 100%);
+    border-bottom: 2px solid #0e7c86;
+    padding: 10px 16px; margin: 0 -16px 16px;
+    display: flex; justify-content: space-between; align-items: center;
+    border-radius: 0 0 12px 12px;
+  }
+  .header-date { font-size: 15px; font-weight: 600; color: #0e7c86; }
+  .header-time { font-size: 12px; color: #7a8a99; }
+
+  /* Cards */
+  .card {
+    background: #fff; border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    padding: 16px; margin-bottom: 12px;
+  }
+
+  /* Two-column row: fortune + weather */
+  .cards-row { display: flex; gap: 12px; margin-bottom: 12px; }
+  .cards-row .card { margin-bottom: 0; }
+
+  /* Fortune */
+  .fortune-card { flex: 1 1 58%; background: #fffbf0; }
+  .fortune-main { font-size: 16px; font-weight: 600; color: #5a3e1b; margin-bottom: 8px; }
+  .fortune-yi { color: #2d8a3c; margin-bottom: 2px; }
+  .fortune-yi::before { content: "宜 "; font-weight: 700; }
+  .fortune-ji { color: #c0392b; }
+  .fortune-ji::before { content: "忌 "; font-weight: 700; }
+
+  /* Weather */
+  .weather-card { flex: 0 0 38%; }
+  .weather-city { font-size: 15px; font-weight: 600; color: #0e7c86; margin-bottom: 4px; }
+  .weather-desc { font-size: 13px; color: #4a5568; }
+  .weather-temp { font-size: 18px; font-weight: 700; color: #2c3e50; margin: 4px 0; }
+  .weather-none { color: #7a8a99; font-style: italic; }
+
+  /* Daily summary */
+  .summary-heading { font-size: 15px; font-weight: 700; color: #0e7c86; margin-bottom: 6px; }
+  .summary-text { color: #4a5568; line-height: 1.7; }
+  .summary-notice {
+    background: #fff8e1; border-left: 4px solid #f0c040; border-radius: 6px;
+    padding: 10px 14px; color: #8a6d14; font-size: 13px;
+  }
+
+  /* Domain sections */
+  .domain-section { margin-bottom: 18px; }
+  .domain-heading {
+    font-size: 15px; font-weight: 700; color: #0e7c86;
+    padding-bottom: 6px; margin-bottom: 8px;
+    border-bottom: 2px solid #0e7c86;
+  }
+  .article-row { padding: 8px 0; border-bottom: 1px solid #eef2f5; }
+  .article-row:last-child { border-bottom: none; }
+  .article-title { display: block; }
+  .article-title a {
+    color: #0e7c86; text-decoration: none; font-weight: 500;
+  }
+  .article-title a:hover { text-decoration: underline; }
+  .article-meta { font-size: 12px; color: #7a8a99; line-height: 1.5; margin-top: 2px; }
+  .article-date { color: #a0aec0; }
+
+  /* Footer */
+  .footer {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: #eef2f5; border-top: 1px solid #dde4e9;
+    text-align: center; padding: 8px 16px;
+    font-size: 11px; color: #7a8a99; z-index: 5;
+  }
+
+  /* Muted text utility */
+  .muted { color: #7a8a99; }
+</style>
+</head>
+<body>
+
+{% set zodiac_emojis = {"鼠": "🐀", "牛": "🐂", "虎": "🐅", "兔": "🐇", "龙": "🐉", "蛇": "🐍", "马": "🐎", "羊": "🐐", "猴": "🐒", "鸡": "🐓", "狗": "🐕", "猪": "🐖"} %}
+{% set domain_labels = {"ai_tech": "AI / 科技前沿", "programming": "编程 / 开源", "arknights": "明日方舟", "yuri_gl": "百合 / GL", "mad_amv": "MAD / 漫剪"} %}
+{% set domain_order = ["ai_tech", "programming", "arknights", "yuri_gl", "mad_amv"] %}
+
+<div class="container">
+
+  {# ── 1. Header ── #}
+  <div class="header">
+    <span class="header-date">
+      {{ solar_date | default("--") }}
+      {{ weekday | default(fortune.weekday | default("")) }}
+    </span>
+    <span class="header-time">
+      更新于 {{ fetched_at[11:19] if fetched_at | length > 11 else fetched_at }}
+    </span>
+  </div>
+
+  {# ── 2 & 3. Fortune + Weather row ── #}
+  <div class="cards-row">
+    {# Fortune card #}
+    <div class="card fortune-card">
+      <div class="fortune-main">
+        {{ zodiac_emojis.get(fortune.zodiac, "") }}
+        {{ fortune.zodiac }}
+        {{ fortune.lunar_date }}
+      </div>
+      <div class="fortune-yi">{{ fortune.yi | default([], true) | join(", ") }}</div>
+      <div class="fortune-ji">{{ fortune.ji | default([], true) | join(", ") }}</div>
+    </div>
+
+    {# Weather card #}
+    <div class="card weather-card">
+      {% if weather %}
+        <div class="weather-city">
+          {% if "晴" in weather.today.weather_description %}☀️
+          {% elif "多云" in weather.today.weather_description %}⛅
+          {% elif "阴" in weather.today.weather_description %}☁️
+          {% elif "雪" in weather.today.weather_description %}🌨️
+          {% elif "雾" in weather.today.weather_description %}🌫️
+          {% elif "雷" in weather.today.weather_description %}⛈️
+          {% elif "雨" in weather.today.weather_description %}🌧️
+          {% else %}🌤️{% endif %}
+          {{ weather.resolved_name | default(weather.city, true) }}
+        </div>
+        <div class="weather-desc">{{ weather.today.weather_description }}</div>
+        <div class="weather-temp">{{ weather.today.temp_min }}° - {{ weather.today.temp_max }}°C</div>
+      {% else %}
+        <div class="weather-none">❓ 无法获取天气</div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── 4. Daily summary ── #}
+  <div class="card">
+    {% if daily_summary %}
+      <div class="summary-heading">今日重点</div>
+      <div class="summary-text">{{ daily_summary }}</div>
+    {% elif headlines_only_mode %}
+      <div class="summary-notice">
+        {{ headlines_only_notice | default("今日未生成 AI 摘要。") }}
+      </div>
+    {% else %}
+      <div class="summary-notice">暂无今日摘要。</div>
+    {% endif %}
+  </div>
+
+  {# ── 5. Articles by domain ── #}
+  {% for domain in domain_order %}
+    {% set articles = articles_by_domain.get(domain, []) %}
+    {% if articles %}
+    <div class="domain-section">
+      <div class="domain-heading">{{ domain_labels.get(domain, domain) }}</div>
+      {% for article in articles[:5] %}
+      <div class="article-row">
+        <div class="article-title">
+          <a href="{{ article.url }}" target="_blank" rel="noopener">{{ article.title }}</a>
+        </div>
+        <div class="article-meta">
+          {% set disp = article.ai_summary if (article.ai_summary | default("", true)) and not headlines_only_mode else (article.summary | default("", true))[:120] %}
+          {{ disp }}
+          {% if article.published_at %}
+            <span class="article-date">{{ article.published_at[:10] }}</span>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% endfor %}
+
+</div>
+
+{# ── 6. Footer ── #}
+<div class="footer">
+  由 news-agent 整理 · 数据源 RSSHub / 原始 RSS / Bangumi / 本地黄历 · 仅供个人学习研究
+</div>
+
+</body>
+</html>

@@ -1,0 +1,209 @@
+# Main-process module — never import from worker.py
+"""pywebview window with Edge WebView2 backend for daily digest and chat UI."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import jinja2
+import webview
+
+from news_agent.logging_setup import get_logger
+
+if TYPE_CHECKING:
+    from news_agent.config import Config
+
+# ---------------------------------------------------------------------------
+# Module constants
+# ---------------------------------------------------------------------------
+
+APP_NAME = "news-agent"
+STATE_FILENAME = "latest_state.json"
+TEMPLATE_DIR = Path(__file__).parent / "templates"
+DEFAULT_WIDTH = 800
+DEFAULT_HEIGHT = 600
+
+logger = get_logger()
+
+# ---------------------------------------------------------------------------
+# Internal state
+# ---------------------------------------------------------------------------
+
+_current_window: webview.Window | None = None
+_jinja_env: jinja2.Environment | None = None
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _get_state_dir() -> Path:
+    """Return ``%APPDATA%/news-agent/`` (falls back to ``~/.config/news-agent/``)."""
+    base = os.environ.get("APPDATA", str(Path.home() / ".config"))
+    return Path(base) / APP_NAME
+
+
+def _get_env() -> jinja2.Environment:
+    """Return the module-level Jinja2 ``Environment`` (lazy-init singleton)."""
+    global _jinja_env
+    if _jinja_env is None:
+        _jinja_env = jinja2.Environment(
+            loader=jinja2.FileSystemLoader(str(TEMPLATE_DIR)),
+            autoescape=jinja2.select_autoescape(["html"]),
+        )
+    return _jinja_env
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def load_bundle(state_path: Path | None = None) -> dict | None:
+    """Read the daily bundle JSON from *state_path* or the default location.
+
+    Default path: ``%APPDATA%/news-agent/latest_state.json``.
+
+    Returns ``None`` (with a logged warning) when the file is missing,
+    unreadable, or contains invalid JSON — never raises.
+    """
+    path = state_path or (_get_state_dir() / STATE_FILENAME)
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        logger.warning("Bundle file not found: %s", path)
+        return None
+    except json.JSONDecodeError:
+        logger.warning("Bundle file contains invalid JSON: %s", path, exc_info=True)
+        return None
+    except OSError:
+        logger.warning("Cannot read bundle file: %s", path, exc_info=True)
+        return None
+
+
+def render_html(bundle: dict | None) -> str:
+    """Render ``daily.html`` Jinja2 template with *bundle* as context.
+
+    When *bundle* is ``None`` an empty ``dict`` is substituted — the
+    template uses ``|default`` guards for every top-level key, so
+    ``UndefinedError`` is never raised.
+    """
+    env = _get_env()
+    template = env.get_template("daily.html")
+    return template.render(**(bundle or {}))
+
+
+def create_window(config: Config | None = None) -> webview.Window | None:
+    """Create a pywebview window displaying the daily briefing.
+
+    Calls :func:`load_bundle` and :func:`render_html` internally.  Window
+    geometry is taken from ``config.window_position`` when *config* is
+    provided (``x`` or ``y`` equal to ``-1`` means centred).
+
+    Does **not** call :func:`webview.start` — the caller owns the GUI event
+    loop.
+
+    Returns the new :class:`webview.Window` instance.
+    """
+    global _current_window
+
+    bundle = load_bundle()
+    html = render_html(bundle)
+
+    # --- Resolve window geometry ---
+    width = DEFAULT_WIDTH
+    height = DEFAULT_HEIGHT
+    x: int | None = None  # None → centred
+    y: int | None = None
+
+    if config is not None:
+        wp = config.window_position
+        width = int(wp.get("w", DEFAULT_WIDTH) or DEFAULT_WIDTH)
+        height = int(wp.get("h", DEFAULT_HEIGHT) or DEFAULT_HEIGHT)
+        rx = int(wp.get("x", -1) or -1)
+        ry = int(wp.get("y", -1) or -1)
+        if rx >= 0:
+            x = rx
+        if ry >= 0:
+            y = ry
+
+    window = webview.create_window(
+        title="今日播报 NewsAgent",
+        html=html,
+        width=width,
+        height=height,
+        x=x,
+        y=y,
+        on_top=False,
+    )
+    _current_window = window
+    return window
+
+
+def get_window() -> webview.Window | None:
+    """Return the most recently created window, or ``None``."""
+    return _current_window
+
+
+def show_window(window: webview.Window | None = None) -> None:
+    """Show *window*, creating one via :func:`create_window` if none exists."""
+    if window is None:
+        window = get_window()
+    if window is None:
+        window = create_window()
+    if window is not None:
+        window.show()
+
+
+def hide_window(window: webview.Window | None = None) -> None:
+    """Hide *window* (falls back to :func:`get_window`)."""
+    if window is None:
+        window = get_window()
+    if window is not None:
+        window.hide()
+
+
+def destroy_window(window: webview.Window | None = None) -> None:
+    """Destroy *window* and clear the internal module-level reference.
+
+    Falls back to :func:`get_window` when *window* is ``None``.  Any
+    exception during ``window.destroy()`` is logged and not re-raised.
+    """
+    global _current_window
+
+    if window is None:
+        window = get_window()
+    if window is not None:
+        try:
+            window.destroy()
+        except Exception:
+            logger.warning("Error destroying window", exc_info=True)
+    _current_window = None
+
+
+# ---------------------------------------------------------------------------
+# Smoke test
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    bundle_path = _get_state_dir() / STATE_FILENAME
+    print(f"Bundle path: {bundle_path}")
+
+    # load_bundle — returns None when file doesn't exist
+    bundle = load_bundle()
+    print(f"load_bundle result: {type(bundle).__name__}")
+
+    # render_html with empty dict — must not raise Jinja2 UndefinedError
+    html = render_html({})
+    print(f"render_html({{}}) length: {len(html)} chars")
+
+    # render_html with None — same behaviour
+    html2 = render_html(None)
+    print(f"render_html(None) length: {len(html2)} chars")
+
+    print("OK")

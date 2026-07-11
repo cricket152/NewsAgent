@@ -1,0 +1,105 @@
+# News Agent Configuration
+# Copy this file to config.yaml and adjust values for your environment.
+# Schema: see .omo/drafts/news-agent.md "Defaults Applied" section.
+
+# keyring service name for DeepSeek API key retrieval.
+# The key is stored in Windows Credential Manager via keyring.set_password("news-agent", "deepseek_api_key").
+# If keyring is unavailable, falls back to %APPDATA%/news-agent/.env (DEEPSEEK_API_KEY=xxx).
+api_key_ref: news-agent
+
+# HTTP/HTTPS proxy for all network requests (httpx + openai SDK).
+# Set to your Clash/local proxy if you need to bypass GFW for Reddit/Bangumi/dmhy etc.
+# Leave empty for direct connection.
+proxy: "http://127.0.0.1:7890"
+
+# Daily cost ceiling in tokens (DeepSeek v4-flash: ~$0.007/day at 50K tokens).
+# When exceeded, news displays headlines-only (no AI summaries), and chat replies "今日额度已用完".
+cost_ceiling_daily_tokens: 50000
+
+# Weather city for open-meteo API (free, no key required).
+# Use latitude,longitude format: "<city> <lat>,<lng>"
+weather_city: "Beijing"
+
+# Global hotkey to summon the window from tray (pynput format).
+hotkey_binding: "ctrl+alt+n"
+
+# Window position and size on last close.
+# x/y = null means center on primary monitor.
+window_position:
+  x: null
+  y: null
+  w: 900
+  h: 700
+
+# Worker schedule (HH:MM, 24-hour).
+worker_schedule:
+  - "06:00"
+  - "18:00"
+
+# RSSHub configuration.
+# Primary: local Docker instance (docker compose up in docker/ directory).
+# Fallback: public instances — used only when local RSSHub is down.
+rsshub_base: "http://localhost:1200"
+rsshub_fallback:
+  - "https://rsshub.app"
+
+# Data retention (days).
+article_retention_days: 30
+conversation_retention_days: 30
+
+# Maximum conversation context before truncation (effective tokens, approximate).
+conversation_max_tokens: 64000
+
+##############################################################################
+# News Sources — grouped by interest domain.
+# Each source has:
+#   type:     rss | rsshub | html | api
+#   url:      fetch URL (for rsshub type, the path is appended to rsshub_base)
+#   limit:    max items per fetch (default 20)
+##############################################################################
+
+sources:
+  # AI / 科技前沿
+  ai_tech:
+    - type: rss
+      url: "https://hnrss.org/frontpage"
+      limit: 20
+    - type: rsshub
+      url: "/36kr/newsflashes"
+      limit: 10
+    - type: rss
+      url: "http://export.arxiv.org/rss/cs.AI"
+      limit: 10
+
+  # 编程 / 开源动态
+  programming:
+    - type: rss
+      url: "https://hnrss.org/frontpage?points=50"
+      limit: 15
+    - type: rss
+      url: "https://www.reddit.com/r/programming/.rss"
+      limit: 10
+
+  # 明日方舟
+  arknights:
+    - type: mediawiki_api
+      url: "https://prts.wiki/api.php"
+      limit: 10
+    - type: rsshub
+      url: "/nga/forum/607"
+      limit: 10
+
+  # 百合
+  yuri_gl:
+    - type: api
+      url: "https://api.bgm.tv/v0/subjects"
+      limit: 10
+    - type: rss
+      url: "https://dmhy.org/topics/rss/rss.xml?keyword=百合"
+      limit: 10
+
+  # MAD・漫剪
+  mad_amv:
+    - type: rsshub
+      url: "/bilibili/popular/all"
+      limit: 10

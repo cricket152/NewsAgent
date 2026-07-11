@@ -1,0 +1,47 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project data (SQLite databases, logs)
+data/*.db
+data/*.db-*
+data/*.db-*
+
+# Logs directory
+logs/
+
+# Environment and secrets
+.env
+*.env
+!config.yaml.example
+
+# Build artifacts
+build/
+dist/
+*.spec.bak
+*.egg-info/
+*.egg
+
+# Linter cache
+.ruff_cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# User app data reference (not committed, runtime path)
+%APPDATA%/news-agent/
