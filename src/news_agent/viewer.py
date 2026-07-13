@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 import jinja2
 import webview
 
+from news_agent.chat_bridge import ChatBridge
 from news_agent.logging_setup import get_logger
 
 if TYPE_CHECKING:
@@ -33,6 +34,7 @@ logger = get_logger()
 # ---------------------------------------------------------------------------
 
 _current_window: webview.Window | None = None
+_chat_bridge: ChatBridge | None = None
 _jinja_env: jinja2.Environment | None = None
 
 
@@ -56,6 +58,18 @@ def _get_env() -> jinja2.Environment:
             autoescape=jinja2.select_autoescape(["html"]),
         )
     return _jinja_env
+
+
+def _get_chat_bridge(db_path: Path | None = None) -> ChatBridge:
+    """Return the module-level :class:`ChatBridge` singleton.
+
+    Constructed once on first call; subsequent calls ignore *db_path*.
+    """
+    global _chat_bridge
+    if _chat_bridge is None:
+        _chat_bridge = ChatBridge(db_path=db_path)
+        logger.debug("ChatBridge initialised")
+    return _chat_bridge
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +112,9 @@ def render_html(bundle: dict | None) -> str:
     return template.render(**(bundle or {}))
 
 
-def create_window(config: Config | None = None) -> webview.Window | None:
+def create_window(
+    config: Config | None = None, db_path: Path | None = None
+) -> webview.Window | None:
     """Create a pywebview window displaying the daily briefing.
 
     Calls :func:`load_bundle` and :func:`render_html` internally.  Window
@@ -114,6 +130,9 @@ def create_window(config: Config | None = None) -> webview.Window | None:
 
     bundle = load_bundle()
     html = render_html(bundle)
+
+    # --- JS API bridge for chat tab ---
+    bridge = _get_chat_bridge(db_path=db_path)
 
     # --- Resolve window geometry ---
     width = DEFAULT_WIDTH
@@ -140,6 +159,7 @@ def create_window(config: Config | None = None) -> webview.Window | None:
         x=x,
         y=y,
         on_top=False,
+        js_api=bridge,
     )
     _current_window = window
     return window

@@ -29,7 +29,7 @@ logger = logging.getLogger("news_agent")
 # ---------------------------------------------------------------------------
 _VALID_DOMAINS = frozenset({"github_trending", "programming", "bilibili_hot"})
 _VALID_TYPES = frozenset(
-    {"rss", "rsshub", "html", "api", "mediawiki_api", "bilibili_hot", "github_trending"}
+    {"rss", "rsshub", "bilibili_hot", "github_trending"}
 )
 
 
@@ -46,7 +46,7 @@ class SourceEntry:
     ``keyword``) that are not part of the core schema.
     """
 
-    type: str  # "rss" | "rsshub" | "html" | "api" | "mediawiki_api"
+    type: str  # "rss" | "rsshub" | "bilibili_hot" | "github_trending"
     url: str
     domain: str  # see _VALID_DOMAINS
     params: dict[str, str] = field(default_factory=dict)

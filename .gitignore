@@ -45,3 +45,6 @@ desktop.ini
 
 # User app data reference (not committed, runtime path)
 %APPDATA%/news-agent/
+
+
+/context

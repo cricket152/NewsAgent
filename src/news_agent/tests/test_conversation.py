@@ -1,11 +1,11 @@
-"""Tests for ``news_agent.conversation`` — conversation history management."""
+"""Tests for ``news_agent.agent.conversation`` — conversation history management."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import patch
 
-from news_agent.conversation import clear_history, get_history, send_message
+from news_agent.agent.conversation import clear_history, get_history, send_message
 from news_agent.db import get_write_connection, init_db, insert_conversation
 
 
@@ -13,8 +13,11 @@ def test_send_message_roundtrip(tmp_db_path: Path) -> None:
     """send_message persists user+assistant messages and returns AI reply."""
     init_db(tmp_db_path)
 
-    with patch("news_agent.conversation.llm.chat", return_value="AI reply"):
-        with patch("news_agent.conversation.llm.get_today_remaining_tokens", return_value=50000):
+    with patch("news_agent.agent.conversation.llm.chat", return_value="AI reply"):
+        with patch(
+            "news_agent.agent.conversation.llm.get_today_remaining_tokens",
+            return_value=50000,
+        ):
             response = send_message("hello", db_path=tmp_db_path)
 
     assert response == "AI reply"
@@ -31,8 +34,11 @@ def test_send_message_4_messages_roundtrip(tmp_db_path: Path) -> None:
     """Insert 2 user + 2 assistant → get_history returns 4."""
     init_db(tmp_db_path)
 
-    with patch("news_agent.conversation.llm.chat", return_value="reply"):
-        with patch("news_agent.conversation.llm.get_today_remaining_tokens", return_value=50000):
+    with patch("news_agent.agent.conversation.llm.chat", return_value="reply"):
+        with patch(
+            "news_agent.agent.conversation.llm.get_today_remaining_tokens",
+            return_value=50000,
+        ):
             send_message("msg1", db_path=tmp_db_path)
             send_message("msg2", db_path=tmp_db_path)
 

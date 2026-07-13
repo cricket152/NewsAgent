@@ -1,8 +1,8 @@
 """Curator: orchestrates fetchers + DeepSeek LLM to build a daily bundle for the viewer.
 
 Receives a Config, calls each fetcher per source, dedupes by URL, takes top 5 per
-domain, requests 50字 AI summaries from DeepSeek, builds a 100字 daily summary, and
-returns a single dict ready for Jinja2 rendering.
+domain, requests 50字 AI summaries from DeepSeek, builds a 300-400字 daily summary
+with 总结 + 评价 sections, and returns a single dict ready for Jinja2 rendering.
 
 Never raises. Returns a dict with ``headlines_only_mode=True`` on cost ceiling or
 LLM failure.
@@ -35,8 +35,14 @@ _ARTICLE_SUMMARY_SYSTEM = (
 )
 
 _DAILY_SUMMARY_SYSTEM = (
-    "你是一个新闻编辑助手。请基于用户提供的今日新闻标题列表，用100字以内的中文总结今天"
-    "最值得关注的话题。只输出总结文本，不要前缀不要列表格式。"
+    "你是一个资深新闻编辑助手。请基于用户提供的今日新闻标题列表，"
+    "用300-400字的中文撰写一份当日新闻概要，分为两段：\n"
+    "第一段【总结】(约200-250字)：归纳今天最值得关注的话题主线，"
+    "按领域或主题串联叙述，避免逐条罗列；\n"
+    "第二段【评价】(约100-150字)：站在编辑视角点评今日资讯的"
+    "整体走向或值得读者深思的角度，可适度表达观点。\n"
+    "只输出这两段中文文本，不要在前面加额外说明、不要使用 Markdown 标题、"
+    "不要列表、不要提及\"总结\"\"评价\"二字标签。"
 )
 
 
@@ -68,18 +74,6 @@ def _dispatch_fetcher(
             from news_agent.fetchers.rsshub import fetch_rsshub
 
             return fetch_rsshub(source, rsshub_url=config.rsshub_url)
-        elif source.type == "html":
-            from news_agent.fetchers.html_src import fetch_html
-
-            return fetch_html(source)
-        elif source.type == "api":
-            from news_agent.fetchers.bangumi import fetch_bangumi
-
-            return fetch_bangumi(source)
-        elif source.type == "mediawiki_api":
-            from news_agent.fetchers.mediawiki import fetch_mediawiki_recent
-
-            return fetch_mediawiki_recent(source)
         elif source.type == "bilibili_hot":
             from news_agent.fetchers.bilibili_hot import fetch_bilibili_hot
 
@@ -116,6 +110,57 @@ def _make_emergency_fortune() -> dict[str, Any]:
         "fetched_at": _utcnow_iso(),
         "source": "emergency-fallback",
     }
+
+
+def _load_cached_weather() -> dict[str, Any] | None:
+    """Return previous weather dict cached in ``latest_state.json``.
+
+    Only reuse when the cached weather dict has ``today.temp_max`` and is from
+    within the last 24 hours UTC. Anything older is considered too stale. Returns
+    None on any error, missing file, invalid JSON, or stale/invalid cache.
+    """
+    try:
+        import json
+        import os
+
+        state_path = (
+            Path(os.environ.get("APPDATA", "")) / "news-agent" / "latest_state.json"
+        )
+        if not state_path.exists():
+            return None
+
+        with state_path.open("r", encoding="utf-8") as fh:
+            state = json.load(fh)
+        if not isinstance(state, dict):
+            return None
+
+        cached = state.get("weather")
+        if not isinstance(cached, dict):
+            return None
+
+        # Validate temperature key presence
+        today = cached.get("today")
+        if not isinstance(today, dict) or "temp_max" not in today:
+            return None
+
+        # Age gate: fetched_at must be within the last 24 hours UTC
+        fetched_at = state.get("fetched_at") or cached.get("fetched_at")
+        if not isinstance(fetched_at, str) or not fetched_at:
+            return None
+        try:
+            ts = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        age_seconds = (datetime.now(timezone.utc) - ts).total_seconds()
+        if age_seconds < 0 or age_seconds > 24 * 3600:
+            return None
+
+        return cached
+    except Exception:
+        logger.debug("cached weather fallback miss", exc_info=True)
+        return None
 
 
 # ── public API ───────────────────────────────────────────────────────────────
@@ -178,11 +223,20 @@ def _run_curator_impl(
         from news_agent.fetchers.weather import fetch_weather
 
         weather: dict[str, Any] | None = fetch_weather(
-            config.weather_city, timeout=5.0
+            config.weather_city, timeout=10.0
         )
     except Exception:
         logger.warning("weather fetch failed", exc_info=True)
         weather = None
+
+    if weather is None:
+        cached_weather = _load_cached_weather()
+        if cached_weather is not None:
+            logger.info(
+                "using cached weather from %s",
+                cached_weather.get("fetched_at", "?"),
+            )
+            weather = cached_weather
 
     # 3. Fetch articles per source
     articles_by_domain_raw: defaultdict[str, list[dict[str, Any]]] = (
@@ -288,7 +342,8 @@ def _run_curator_impl(
                 {
                     "role": "user",
                     "content": (
-                        f"今日新闻标题:\n{chr(10).join(titles)}\n100字总结:"
+                        f"今日新闻标题:\n{chr(10).join(titles)}\n"
+                        "请按系统提示的要求输出300-400字的两段中文概要："
                     ),
                 },
             ]
@@ -296,7 +351,7 @@ def _run_curator_impl(
                 daily_summary = chat(
                     daily_messages,
                     temperature=0.5,
-                    max_tokens=400,
+                    max_tokens=800,
                     db_path=db_path,
                 ).strip()
             except CostCeilingExceeded:

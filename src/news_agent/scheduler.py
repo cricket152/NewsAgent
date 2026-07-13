@@ -15,9 +15,7 @@ import csv
 import io
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
-from xml.sax.saxutils import escape as _xml_escape
 
 from news_agent.config import load_config
 from news_agent.logging_setup import get_logger
@@ -59,63 +57,15 @@ def _resolve_worker_py() -> Path:
     return (Path(__file__).parent / "worker.py").resolve()
 
 
-def _build_task_xml(
-    task_name: str,
-    pythonw_path: Path,
-    worker_py_path: Path,
-    schedule_time: str,
-) -> str:
-    """Build a Task Scheduler XML definition string for a daily trigger task.
-
-    The XML enables ``StartWhenAvailable`` (so a missed 06:00 run fires at
-    next boot), ``ExecutionTimeLimit=PT15M``, ``MultipleInstancesPolicy=IgnoreNew``,
-    and allows execution on battery power.
-    """
-    hour, minute = schedule_time.split(":")
-    start_boundary = f"2020-01-01T{hour.zfill(2)}:{minute.zfill(2)}:00"
-
-    cmd = _xml_escape(str(pythonw_path))
-    args = _xml_escape(str(worker_py_path))
-
-    return (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<Task version="1.2"'
-        ' xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">\n'
-        "  <RegistrationInfo>\n"
-        "    <Author>NewsAgent</Author>\n"
-        f"    <Description>NewsAgent Worker — Daily news fetch at {schedule_time}</Description>\n"
-        "  </RegistrationInfo>\n"
-        "  <Triggers>\n"
-        "    <CalendarTrigger>\n"
-        f"      <StartBoundary>{start_boundary}</StartBoundary>\n"
-        "      <ScheduleByDay>\n"
-        "        <DaysInterval>1</DaysInterval>\n"
-        "      </ScheduleByDay>\n"
-        "    </CalendarTrigger>\n"
-        "  </Triggers>\n"
-        "  <Settings>\n"
-        "    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>\n"
-        "    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>\n"
-        "    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>\n"
-        "    <AllowHardTerminate>true</AllowHardTerminate>\n"
-        "    <StartWhenAvailable>true</StartWhenAvailable>\n"
-        "    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>\n"
-        "    <ExecutionTimeLimit>PT15M</ExecutionTimeLimit>\n"
-        "    <Priority>7</Priority>\n"
-        "  </Settings>\n"
-        "  <Actions Context=\"Author\">\n"
-        "    <Exec>\n"
-        f"      <Command>{cmd}</Command>\n"
-        f"      <Arguments>\"{args}\"</Arguments>\n"
-        "    </Exec>\n"
-        "  </Actions>\n"
-        "</Task>"
-    )
-
-
 def _build_task_name(schedule_time: str) -> str:
-    """Return ``NewsAgentWorker_HH:MM`` for a given ``HH:MM`` time string."""
-    return f"{TASK_NAME_PREFIX}_{schedule_time}"
+    """Return ``NewsAgentWorker_HH-MM`` for a given ``HH:MM`` time string.
+
+    Task Scheduler names cannot contain colons (``:``), backslashes, or other
+    Windows reserved characters, so we replace the ``:`` with a dash.
+    The original HH:MM time string is recoverable by replacing ``-`` → ``:``.
+    """
+    safe_time = schedule_time.replace(":", "-")
+    return f"{TASK_NAME_PREFIX}_{safe_time}"
 
 
 # ---------------------------------------------------------------------------
@@ -153,29 +103,23 @@ def register_worker_tasks(schedule_times: list[str] | None = None) -> bool:
     all_ok = True
     for schedule_time in schedule_times:
         task_name = _build_task_name(schedule_time)
-        xml_content = _build_task_xml(
-            task_name, pythonw_path, worker_py_path, schedule_time
-        )
 
-        tmp_path: Path | None = None
+        # Plain command-line registration: avoids the XML/BOM/encoding
+        # headaches of ``/Create /XML`` on cp936 (Chinese Windows) codepages.
+        # Advanced features (StartWhenAvailable, ExecutionTimeLimit) are not
+        # settable via this form, but ``worker.py`` own PID-lock + 15-min
+        # watchdog cover overlap & hang protection internally.
+        task_command = f'"{pythonw_path}" "{worker_py_path}"'
+
         try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                suffix=".xml",
-                delete=False,
-                encoding="utf-8",
-            ) as f:
-                f.write(xml_content)
-                tmp_path = Path(f.name)
-
             result = subprocess.run(
                 [
                     "schtasks",
                     "/Create",
-                    "/XML",
-                    str(tmp_path),
-                    "/TN",
-                    task_name,
+                    "/SC", "DAILY",
+                    "/ST", schedule_time,
+                    "/TN", task_name,
+                    "/TR", task_command,
                     "/F",
                 ],
                 capture_output=True,
@@ -203,12 +147,6 @@ def register_worker_tasks(schedule_times: list[str] | None = None) -> bool:
         except Exception:
             logger.exception("Failed to register task %s", task_name)
             all_ok = False
-        finally:
-            if tmp_path is not None:
-                try:
-                    tmp_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
 
     return all_ok
 
@@ -281,17 +219,15 @@ def is_worker_registered() -> bool:
         return False
 
     try:
+        # Some Windows locales emit non-English CSV headers (e.g. Chinese
+        # ``任务名`` instead of ``TaskName``), so column-name matching is
+        # unreliable.  Scan every cell of every row for our prefix substring.
         reader = csv.reader(io.StringIO(result.stdout))
-        header = next(reader, None)
-        if header is None:
-            return False
-        try:
-            name_col = header.index("TaskName")
-        except ValueError:
-            return False
+        next(reader, None)  # discard header
         for row in reader:
-            if len(row) > name_col and TASK_NAME_PREFIX in row[name_col]:
-                return True
+            for cell in row:
+                if TASK_NAME_PREFIX in cell:
+                    return True
     except Exception:
         logger.warning("Failed to parse schtasks query output", exc_info=True)
 
@@ -324,39 +260,20 @@ def get_worker_tasks() -> list[dict[str, str]]:
     tasks: list[dict[str, str]] = []
     try:
         reader = csv.reader(io.StringIO(result.stdout))
-        header = next(reader, None)
-        if header is None:
-            return []
-
-        col_map = {name: idx for idx, name in enumerate(header)}
-        name_idx = col_map.get("TaskName")
-        status_idx = col_map.get("Status")
-        next_run_idx = col_map.get("Next Run Time")
-
-        if name_idx is None:
-            return []
-
+        next(reader, None)  # discard header (Chinese locales use 任务名)
         for row in reader:
-            if len(row) <= name_idx:
+            if not row:
                 continue
-            raw_name: str = row[name_idx]
+            raw_name = row[0].strip()
             if TASK_NAME_PREFIX not in raw_name:
                 continue
+            task_name = raw_name.lstrip("\\")
+            next_run = row[1] if len(row) > 1 else "N/A"
+            status = row[2] if len(row) > 2 else "Unknown"
 
-            task_name = raw_name.strip("\\").strip('"')
-            status = (
-                row[status_idx].strip('"')
-                if status_idx is not None and len(row) > status_idx
-                else "Unknown"
-            )
-            next_run = (
-                row[next_run_idx].strip('"')
-                if next_run_idx is not None and len(row) > next_run_idx
-                else "N/A"
-            )
-
-            # Derive schedule label from task name: "NewsAgentWorker_06:00" → "06:00"
-            time_part = task_name[len(TASK_NAME_PREFIX) :].lstrip("_")
+            # Derive schedule label from task name: "NewsAgentWorker_06-00"
+            # → "06:00" (restore colon originally replaced at register time).
+            time_part = task_name[len(TASK_NAME_PREFIX) :].lstrip("_").replace("-", ":")
             schedule = f"Daily at {time_part}" if time_part else "Daily"
 
             tasks.append(

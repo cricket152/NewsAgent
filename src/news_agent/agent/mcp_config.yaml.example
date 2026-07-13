@@ -1,0 +1,13 @@
+# MCP (Model Context Protocol) server configuration — placeholder
+# Not yet wired to any runtime.  This file documents the future schema.
+# See https://github.com/modelcontextprotocol/spec for the full spec.
+#
+# mcpServers:
+#   news-search:
+#     command: python
+#     args: ["-m", "news_agent.mcp.news_search"]
+#     env:
+#       API_KEY: "${NEWS_API_KEY}"
+#   web-browser:
+#     command: npx
+#     args: ["-y", "@anthropic/mcp-server-browser"]

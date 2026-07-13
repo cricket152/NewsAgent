@@ -21,20 +21,58 @@
   ::-webkit-scrollbar-track { background: #eef2f5; }
   ::-webkit-scrollbar-thumb { background: #0e7c86; border-radius: 3px; }
 
+  /* ── Navigation Bar (sticky top) ── */
+  .nav-bar {
+    position: sticky; top: 0; z-index: 100;
+    display: flex; align-items: stretch;
+    background: linear-gradient(135deg, #e8f4f6 0%, #d4edf0 100%);
+    border-bottom: 2px solid #0e7c86;
+    height: 48px;
+  }
+  .nav-bar .nav-item {
+    flex: 1;
+    background: transparent;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    padding: 0 20px;
+    font-size: 14px;
+    color: #0e7c86;
+    font-family: inherit;
+    transition: background 0.2s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .nav-bar .nav-item:hover {
+    background: rgba(14, 124, 134, 0.08);
+  }
+  .nav-bar .nav-item.active {
+    border-bottom-color: #0e7c86;
+    font-weight: 700;
+    background: linear-gradient(180deg, #d4edf0, #ffffff);
+  }
+  .nav-label-short { display: none; }
+  @media (max-width: 600px) {
+    .nav-label-full { display: none; }
+    .nav-label-short { display: inline; }
+    .nav-bar .nav-item { padding: 0 8px; font-size: 13px; }
+  }
+
   /* Container */
   .container { max-width: 768px; margin: 0 auto; padding: 16px 16px 80px; }
 
-  /* Header */
-  .header {
-    position: sticky; top: 0; z-index: 10;
-    background: linear-gradient(135deg, #e8f4f6 0%, #d4edf0 100%);
-    border-bottom: 2px solid #0e7c86;
-    padding: 10px 16px; margin: 0 -16px 16px;
-    display: flex; justify-content: space-between; align-items: center;
-    border-radius: 0 0 12px 12px;
+  /* Tab panes */
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+  #tab-chat.active { display: flex; flex-direction: column; }
+
+  /* Date header inside tab 1 */
+  .date-header-big {
+    font-size: 22px; font-weight: 700; color: #0e7c86;
+    margin-bottom: 4px;
   }
-  .header-date { font-size: 15px; font-weight: 600; color: #0e7c86; }
-  .header-time { font-size: 12px; color: #7a8a99; }
+  .date-header-sub {
+    font-size: 12px; color: #7a8a99; margin-bottom: 16px;
+  }
 
   /* Cards */
   .card {
@@ -87,17 +125,6 @@
   .article-meta { font-size: 12px; color: #7a8a99; line-height: 1.5; margin-top: 2px; }
   .article-date { color: #a0aec0; }
 
-  /* Footer */
-  .footer {
-    position: fixed; bottom: 0; left: 0; right: 0;
-    background: #eef2f5; border-top: 1px solid #dde4e9;
-    text-align: center; padding: 8px 16px;
-    font-size: 11px; color: #7a8a99; z-index: 5;
-  }
-
-  /* Muted text utility */
-  .muted { color: #7a8a99; }
-
   /* Domain header wrapper + toggle button */
   .domain-header-wrapper {
     display: flex;
@@ -116,127 +143,797 @@
   .section-toggle:hover {
     color: #2d8a3c;
   }
+
+  /* Footer */
+  .footer {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: #eef2f5; border-top: 1px solid #dde4e9;
+    text-align: center; padding: 8px 16px;
+    font-size: 11px; color: #7a8a99; z-index: 5;
+  }
+
+  /* Muted text utility */
+  .muted { color: #7a8a99; }
+
+  /* ── Chat UI ── */
+  .chat-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 12px;
+    max-height: calc(100vh - 240px);
+  }
+  .chat-bubble {
+    max-width: 78%;
+    padding: 10px 14px;
+    border-radius: 12px;
+    margin-bottom: 8px;
+    word-break: break-word;
+    line-height: 1.6;
+    font-size: 14px;
+  }
+  .chat-bubble.user {
+    margin-left: auto;
+    background: #f0f4f8;
+  }
+  .chat-bubble.ai {
+    margin-right: auto;
+    background: #fff;
+    border: 1px solid #e6f2f4;
+  }
+  .chat-bubble.system {
+    margin: 4px auto;
+    background: transparent;
+    color: #888;
+    font-style: italic;
+    font-size: 12px;
+    max-width: 90%;
+    text-align: center;
+    padding: 6px 10px;
+    border-radius: 6px;
+  }
+  .chat-bubble-label {
+    font-size: 11px;
+    color: #7a8a99;
+    margin-bottom: 2px;
+  }
+  .chat-bubble.user .chat-bubble-label { text-align: right; }
+
+  /* Thinking dots animation (CSS only) */
+  .thinking-dots {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    padding: 2px 0;
+  }
+  .thinking-dots span {
+    width: 6px; height: 6px;
+    background: #0e7c86;
+    border-radius: 50%;
+    display: inline-block;
+    animation: thinking-pulse 1.4s infinite;
+    animation-fill-mode: both;
+  }
+  .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes thinking-pulse {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1); }
+  }
+
+  /* Chat bar (bottom input area) */
+  .chat-bar {
+    flex-shrink: 0;
+    padding: 10px 12px;
+    background: #fff;
+    border-top: 1px solid #eef2f5;
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+  }
+  .chat-bar textarea {
+    flex: 1;
+    resize: none;
+    border: 1px solid #dde4e9;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    outline: none;
+  }
+  .chat-bar textarea:focus {
+    border-color: #0e7c86;
+  }
+  .chat-bar textarea:disabled {
+    background: #f7f9fa;
+  }
+  .chat-bar .btn-send {
+    background: #0e7c86;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+  }
+  .chat-bar .btn-send:hover { background: #0a6a72; }
+  .chat-bar .btn-send:disabled {
+    background: #b0cdd1;
+    cursor: not-allowed;
+  }
+  .chat-bar .btn-clear {
+    background: transparent;
+    color: #7a8a99;
+    border: 1px solid #dde4e9;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+  }
+  .chat-bar .btn-clear:hover { background: #f7f9fa; }
+
+  /* ── Toast notification ── */
+  .toast {
+    position: fixed; bottom: 60px; left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    opacity: 0; z-index: 100;
+    background: #333; color: #fff; padding: 10px 18px;
+    border-radius: 8px; font-size: 13px;
+    transition: opacity 0.3s, transform 0.3s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ── Config tab: skills & MCP rows ── */
+  .skill-row, .mcp-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 0; border-bottom: solid 1px #e8eef0;
+  }
+  .skill-row:last-child, .mcp-row:last-child { border-bottom: none; }
+  .mcp-row .name { font-weight: 600; }
+  .mcp-row .cmd {
+    font-size: 12px; color: #888; margin-top: 4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 400px; font-family: monospace;
+  }
+
+  /* Toggle switch (iOS-style) */
+  .toggle-switch {
+    width: 44px; height: 24px; position: relative;
+    display: inline-block; cursor: pointer; flex-shrink: 0;
+  }
+  .toggle-switch input { display: none; }
+  .toggle-switch .slider {
+    position: absolute; inset: 0; background: #ccc;
+    border-radius: 12px; transition: background 0.2s;
+  }
+  .toggle-switch .slider::before {
+    content: ""; width: 20px; height: 20px; position: absolute;
+    left: 2px; top: 2px; background: white; border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .toggle-switch input:checked + .slider { background: #2d8a3c; }
+  .toggle-switch input:checked + .slider::before { transform: translateX(20px); }
+
+  /* MCP transport badge */
+  .mcp-transport-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 12px;
+    font-size: 11px; color: white; margin-right: 8px;
+  }
+  .mcp-transport-badge.stdio { background: #3498db; }
+  .mcp-transport-badge.http { background: #e67e22; }
+
+  /* MCP add/edit form */
+  .mcp-form {
+    margin: 12px 0; padding: 12px; border: 1px dashed #b0c8cc;
+    border-radius: 6px; background: #fbfff9;
+  }
+  .mcp-form input, .mcp-form select {
+    width: 100%; padding: 6px 8px; margin: 6px 0;
+    border: 1px solid #ccc; border-radius: 4px;
+    font-size: 13px; box-sizing: border-box;
+  }
+
+  /* Buttons */
+  .btn {
+    padding: 6px 14px; border: none; border-radius: 4px;
+    cursor: pointer; font-size: 12px; background: #2d8a3c; color: white;
+  }
+  .btn-secondary { background: #888; }
+  .btn-danger { background: #c0392b; }
+  .btn-row { display: flex; gap: 8px; margin-top: 8px; }
+
+  /* Config card heading helper */
+  .cfg-heading { font-size: 15px; font-weight: 700; color: #0e7c86; margin-bottom: 4px; }
+  .cfg-desc { margin-bottom: 12px; }
 </style>
 </head>
 <body>
 
 {% set zodiac_emojis = {"鼠": "🐀", "牛": "🐂", "虎": "🐅", "兔": "🐇", "龙": "🐉", "蛇": "🐍", "马": "🐎", "羊": "🐐", "猴": "🐒", "鸡": "🐓", "狗": "🐕", "猪": "🐖"} %}
+{# Defensive defaults — keep empty-bundle (render_html({})) Jinja2-safe #}
+{% set solar_date = solar_date | default(fortune.solar_date if fortune else "", true) %}
+{% set fetched_at = fetched_at | default("", true) %}
+{% set weekday = weekday | default("", true) %}
+{% set daily_summary = daily_summary | default("", true) %}
+{% set headlines_only_mode = headlines_only_mode | default(false, true) %}
+{% set articles_by_domain = articles_by_domain | default({}, true) %}
 {% set domain_labels = {
-    "github_trending": "GitHub 项目推荐",
-    "programming": "编程 / 开源",
-    "bilibili_hot": "B站热搜榜"
+    "github_trending": "GitHub 项目",
+    "programming": "科技领域",
+    "bilibili_hot": "热搜榜"
 } %}
 {% set domain_order = ["github_trending", "programming", "bilibili_hot"] %}
+{% set tab1_title = solar_date | default("日期", true) %}
+{% set tab1_short = tab1_title[5:] if tab1_title | length > 5 else tab1_title %}
+
+{# ── Navigation Bar ── #}
+<nav class="nav-bar">
+  <button class="nav-item active" data-tab="tab-date">
+    <span class="nav-label-full">{{ tab1_title }}</span>
+    <span class="nav-label-short">{{ tab1_short }}</span>
+  </button>
+  <button class="nav-item" data-tab="tab-news">
+    <span class="nav-label-full">新闻</span>
+    <span class="nav-label-short">新闻</span>
+  </button>
+  <button class="nav-item" data-tab="tab-chat">
+    <span class="nav-label-full">Agent对话</span>
+    <span class="nav-label-short">对话</span>
+  </button>
+  <button class="nav-item" data-tab="tab-config">
+    <span class="nav-label-full">配置</span>
+    <span class="nav-label-short">配置</span>
+  </button>
+</nav>
 
 <div class="container">
 
-  {# ── 1. Header ── #}
-  <div class="header">
-    <span class="header-date">
-      {{ solar_date | default("--") }}
-      {{ weekday | default(fortune.weekday | default("")) }}
-    </span>
-    <span class="header-time">
-      更新于 {{ fetched_at[11:19] if fetched_at | length > 11 else fetched_at }}
-    </span>
-  </div>
+  {# ══════════════════════════════════════════ #}
+  {# Tab 1 — Date / Fortune / Weather / Summary #}
+  {# ══════════════════════════════════════════ #}
+  <div id="tab-date" class="tab-pane active">
 
-  {# ── 2 & 3. Fortune + Weather row ── #}
-  <div class="cards-row">
-    {# Fortune card #}
-    <div class="card fortune-card">
-      <div class="fortune-main">
-        {{ zodiac_emojis.get(fortune.zodiac, "") }}
-        {{ fortune.zodiac }}
-        {{ fortune.lunar_date }}
-      </div>
-      <div class="fortune-yi">{{ fortune.yi | default([], true) | join(", ") }}</div>
-      <div class="fortune-ji">{{ fortune.ji | default([], true) | join(", ") }}</div>
+    {# Big formatted date header #}
+    <div class="date-header-big">
+      {% set sd = solar_date | default("", true) %}
+      {% if sd %}
+        {% set parts = sd.split("-") %}
+        {% if parts | length == 3 %}{{ parts[0] }}年{{ parts[1] | int }}月{{ parts[2] | int }}日{% else %}{{ sd }}{% endif %}
+      {% else %}
+        日期未设置
+      {% endif %}
+      {% set wd = weekday | default(fortune.weekday if fortune else "", true) %}
+      {% if wd %} {{ wd }}{% endif %}
+    </div>
+    <div class="date-header-sub">
+      {% set fa = fetched_at | default("", true) %}
+      {% if fa | length > 11 %}更新于 {{ fa[11:19] }}{% elif fa %}更新于 {{ fa }}{% endif %}
     </div>
 
-    {# Weather card #}
-    <div class="card weather-card">
-      {% if weather %}
-        <div class="weather-city">
-          {% if "晴" in weather.today.weather_description %}☀️
-          {% elif "多云" in weather.today.weather_description %}⛅
-          {% elif "阴" in weather.today.weather_description %}☁️
-          {% elif "雪" in weather.today.weather_description %}🌨️
-          {% elif "雾" in weather.today.weather_description %}🌫️
-          {% elif "雷" in weather.today.weather_description %}⛈️
-          {% elif "雨" in weather.today.weather_description %}🌧️
-          {% else %}🌤️{% endif %}
-          {{ weather.resolved_name | default(weather.city, true) }}
+    {# Fortune + Weather row #}
+    <div class="cards-row">
+      {# Fortune card #}
+      <div class="card fortune-card">
+        {% if fortune %}
+        <div class="fortune-main">
+          {{ zodiac_emojis.get(fortune.zodiac | default("", true), "") }}
+          {{ fortune.zodiac | default("", true) }}
+          {{ fortune.lunar_date | default("", true) }}
         </div>
-        <div class="weather-desc">{{ weather.today.weather_description }}</div>
-        <div class="weather-temp">{{ weather.today.temp_min }}° - {{ weather.today.temp_max }}°C</div>
+        <div class="fortune-yi">{{ fortune.yi | default([], true) | join(", ") }}</div>
+        <div class="fortune-ji">{{ fortune.ji | default([], true) | join(", ") }}</div>
+        {% else %}
+        <div class="muted">黄历暂未加载</div>
+        {% endif %}
+      </div>
+
+      {# Weather card #}
+      <div class="card weather-card">
+        {% if weather %}
+          <div class="weather-city">
+            {% if "晴" in weather.today.weather_description %}☀️
+            {% elif "多云" in weather.today.weather_description %}⛅
+            {% elif "阴" in weather.today.weather_description %}☁️
+            {% elif "雪" in weather.today.weather_description %}🌨️
+            {% elif "雾" in weather.today.weather_description %}🌫️
+            {% elif "雷" in weather.today.weather_description %}⛈️
+            {% elif "雨" in weather.today.weather_description %}🌧️
+            {% else %}🌤️{% endif %}
+            {{ weather.resolved_name | default(weather.city, true) }}
+          </div>
+          <div class="weather-desc">{{ weather.today.weather_description }}</div>
+          <div class="weather-temp">{{ weather.today.temp_min }}° - {{ weather.today.temp_max }}°C</div>
+        {% else %}
+          <div class="weather-none">❓ 无法获取天气</div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Daily summary #}
+    <div class="card">
+      {% if daily_summary %}
+        <div class="summary-heading">今日重点</div>
+        <div class="summary-text">{{ daily_summary }}</div>
+      {% elif headlines_only_mode %}
+        <div class="summary-notice">
+          {{ headlines_only_notice | default("今日未生成 AI 摘要。") }}
+        </div>
       {% else %}
-        <div class="weather-none">❓ 无法获取天气</div>
+        <div class="summary-notice">暂无今日摘要。</div>
       {% endif %}
     </div>
+
   </div>
 
-  {# ── 4. Daily summary ── #}
-  <div class="card">
-    {% if daily_summary %}
-      <div class="summary-heading">今日重点</div>
-      <div class="summary-text">{{ daily_summary }}</div>
-    {% elif headlines_only_mode %}
-      <div class="summary-notice">
-        {{ headlines_only_notice | default("今日未生成 AI 摘要。") }}
+  {# ══════════════════════════════════════════ #}
+  {# Tab 2 — News (articles by domain)         #}
+  {# ══════════════════════════════════════════ #}
+  <div id="tab-news" class="tab-pane">
+    {% for domain in domain_order %}
+      {% set articles = articles_by_domain.get(domain, []) %}
+      {% if articles %}
+      <div class="domain-section">
+        <div class="domain-header-wrapper">
+          <div class="domain-heading">{{ domain_labels.get(domain, domain) }}</div>
+          <button class="section-toggle" onclick="toggleSection(this, 'section_{{ domain }}')">▼</button>
+        </div>
+        <div id="section_{{ domain }}">
+        {% for article in articles[:5] %}
+        <div class="article-row">
+          <div class="article-title">
+            <a href="{{ article.url }}" target="_blank" rel="noopener">{{ article.title }}</a>
+          </div>
+          <div class="article-meta">
+            {% set disp = article.ai_summary if (article.ai_summary | default("", true)) and not headlines_only_mode else (article.summary | default("", true))[:120] %}
+            {{ disp }}
+            {% if article.published_at %}
+              <span class="article-date">{{ article.published_at[:10] }}</span>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+        </div>
       </div>
-    {% else %}
-      <div class="summary-notice">暂无今日摘要。</div>
-    {% endif %}
+      {% endif %}
+    {% endfor %}
   </div>
 
-  {# ── 5. Articles by domain ── #}
-  {% for domain in domain_order %}
-    {% set articles = articles_by_domain.get(domain, []) %}
-    {% if articles %}
-    <div class="domain-section">
-      <div class="domain-header-wrapper">
-        <div class="domain-heading">{{ domain_labels.get(domain, domain) }}</div>
-        <button class="section-toggle" onclick="toggleSection(this, 'section_{{ domain }}')">▼</button>
-      </div>
-      <div id="section_{{ domain }}">
-      {% for article in articles[:5] %}
-      <div class="article-row">
-        <div class="article-title">
-          <a href="{{ article.url }}" target="_blank" rel="noopener">{{ article.title }}</a>
+  {# ══════════════════════════════════════════ #}
+  {# Tab 3 — Agent Chat                        #}
+  {# ══════════════════════════════════════════ #}
+  <div id="tab-chat" class="tab-pane">
+    <div id="chat-list" class="chat-list"></div>
+    <div id="chat-bar" class="chat-bar">
+      <textarea id="chat-input" rows="3" placeholder="问点什么..." maxlength="500"></textarea>
+      <button id="chat-send" class="btn-send">发送</button>
+      <button id="chat-clear" class="btn-clear">清空历史</button>
+    </div>
+  </div>
+
+  {# ══════════════════════════════════════════ #}
+  {# Tab 4 — Config (Skills & MCP Servers)     #}
+  {# ══════════════════════════════════════════ #}
+  <div id="tab-config" class="tab-pane">
+
+    {# Skills card #}
+    <div class="card">
+      <div class="cfg-heading">Skills 技能</div>
+      <div class="muted cfg-desc">勾选启用的技能，将作为系统提示词前置内容发送给 AI.</div>
+      <div id="skills-list"></div>
+    </div>
+
+    {# MCP Servers card #}
+    <div class="card">
+      <div class="cfg-heading">MCP 服务</div>
+      <div class="muted cfg-desc">持久化 MCP 服务器配置（暂不实际运行）。</div>
+      <div id="mcp-list"></div>
+      <button class="btn" onclick="showMcpForm()" style="margin-top: 12px;">添加 MCP 服务</button>
+      <div id="mcp-form" class="mcp-form" style="display:none;">
+        <input type="hidden" id="mcp-edit-index" value="-1">
+        <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;">名称</div>
+        <input type="text" id="mcp-name" placeholder="例如: my-server">
+        <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;">传输方式</div>
+        <select id="mcp-transport">
+          <option value="stdio">stdio</option>
+          <option value="http">http</option>
+        </select>
+        <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;">命令 / URL</div>
+        <input type="text" id="mcp-command" placeholder="例如: python -m server 或 https://...">
+        <div class="btn-row">
+          <button class="btn" onclick="onSaveMcpServer()">保存</button>
+          <button class="btn btn-secondary" onclick="hideMcpForm()">取消</button>
         </div>
-        <div class="article-meta">
-          {% set disp = article.ai_summary if (article.ai_summary | default("", true)) and not headlines_only_mode else (article.summary | default("", true))[:120] %}
-          {{ disp }}
-          {% if article.published_at %}
-            <span class="article-date">{{ article.published_at[:10] }}</span>
-          {% endif %}
-        </div>
-      </div>
-      {% endfor %}
       </div>
     </div>
-    {% endif %}
-  {% endfor %}
+
+  </div>
 
 </div>
 
-{# ── 6. Footer ── #}
+{# ── Footer ── #}
 <div class="footer">
   由 news-agent 整理 · 数据源 RSSHub / 原始 RSS / Bangumi / 本地黄历 · 仅供个人学习研究
 </div>
 
+<div id="toast" class="toast"></div>
+
 <script>
-function toggleSection(btn, sectionId) {
-    var section = document.getElementById(sectionId);
-    if (section.style.display === 'none') {
-        section.style.display = '';
-        btn.textContent = '▼';
-    } else {
-        section.style.display = 'none';
-        btn.textContent = '▶';
-    }
+/* ═══════════════════════════════════════════
+   Tab switching
+   ═══════════════════════════════════════════ */
+function showTab(tabId) {
+  document.querySelectorAll('.tab-pane').forEach(function(el) { el.classList.remove('active'); });
+  var target = document.getElementById(tabId);
+  if (target) target.classList.add('active');
+  document.querySelectorAll('.nav-bar .nav-item').forEach(function(el) { el.classList.remove('active'); });
+  document.querySelectorAll('.nav-bar .nav-item[data-tab="' + tabId + '"]').forEach(function(el) { el.classList.add('active'); });
+  if (tabId === 'tab-chat') {
+    ensureWebViewReady(loadHistory);
+  }
+  if (tabId === 'tab-config') {
+    ensureWebViewReady(function() { loadSkills(); loadMcpServers(); });
+  }
 }
+
+/* ═══════════════════════════════════════════
+   pywebview API readiness polling
+   ═══════════════════════════════════════════ */
+function ensureWebViewReady(callback) {
+  if (window.pywebview && window.pywebview.api) {
+    callback();
+    return;
+  }
+  var attempts = 0;
+  var timer = setInterval(function() {
+    attempts++;
+    if (window.pywebview && window.pywebview.api) {
+      clearInterval(timer);
+      callback();
+    } else if (attempts > 25) {
+      clearInterval(timer);
+      showApiUnavailable();
+    }
+  }, 200);
+}
+
+function showApiUnavailable() {
+  var sendBtn = document.getElementById('chat-send');
+  if (sendBtn) {
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'AI 服务不可用';
+  }
+  appendSystemBubble('AI 服务不可用');
+}
+
+/* ═══════════════════════════════════════════
+   Section collapse toggle (preserved)
+   ═══════════════════════════════════════════ */
+function toggleSection(btn, sectionId) {
+  var section = document.getElementById(sectionId);
+  if (section.style.display === 'none') {
+    section.style.display = '';
+    btn.textContent = '▼';
+  } else {
+    section.style.display = 'none';
+    btn.textContent = '▶';
+  }
+}
+
+/* ═══════════════════════════════════════════
+   Chat — DOM helpers
+   ═══════════════════════════════════════════ */
+function escapeHtml(text) {
+  var d = document.createElement('div');
+  d.appendChild(document.createTextNode(text || ''));
+  return d.innerHTML;
+}
+
+function appendUserBubble(text) {
+  var list = document.getElementById('chat-list');
+  var wrap = document.createElement('div');
+  wrap.className = 'chat-bubble user';
+  wrap.innerHTML = '<div class="chat-bubble-label">我</div><div>' + escapeHtml(text) + '</div>';
+  list.appendChild(wrap);
+  scrollToBottom();
+  return wrap;
+}
+
+function appendAIBubble(text) {
+  var list = document.getElementById('chat-list');
+  var wrap = document.createElement('div');
+  wrap.className = 'chat-bubble ai';
+  wrap.innerHTML = '<div class="chat-bubble-label">AI</div><div>' + escapeHtml(text) + '</div>';
+  list.appendChild(wrap);
+  scrollToBottom();
+  return wrap;
+}
+
+function appendSystemBubble(text) {
+  var list = document.getElementById('chat-list');
+  var wrap = document.createElement('div');
+  wrap.className = 'chat-bubble system';
+  wrap.textContent = text;
+  list.appendChild(wrap);
+  scrollToBottom();
+  return wrap;
+}
+
+function appendThinkingBubble() {
+  var list = document.getElementById('chat-list');
+  var wrap = document.createElement('div');
+  wrap.className = 'chat-bubble ai';
+  wrap.innerHTML = '<div class="chat-bubble-label">AI</div><div class="thinking-dots"><span></span><span></span><span></span></div>';
+  list.appendChild(wrap);
+  scrollToBottom();
+  return wrap;
+}
+
+function scrollToBottom() {
+  var el = document.getElementById('chat-list');
+  if (el) el.scrollTop = el.scrollHeight;
+}
+
+function setSendInProgress(busy) {
+  var sendBtn = document.getElementById('chat-send');
+  var input = document.getElementById('chat-input');
+  if (sendBtn) {
+    sendBtn.disabled = busy;
+    sendBtn.textContent = busy ? '发送中...' : '发送';
+  }
+  if (input) input.disabled = busy;
+}
+
+/* ═══════════════════════════════════════════
+   Chat — actions
+   ═══════════════════════════════════════════ */
+function onSend() {
+  var input = document.getElementById('chat-input');
+  var text = input.value.trim();
+  if (!text) return;
+
+  if (!window.pywebview || !window.pywebview.api) {
+    appendSystemBubble('正在加载...');
+    ensureWebViewReady(function() { onSend(); });
+    return;
+  }
+
+  input.value = '';
+  appendUserBubble(text);
+  setSendInProgress(true);
+  var thinkingBubble = appendThinkingBubble();
+
+  window.pywebview.api.send_message(text).then(function(reply) {
+    var bubble = document.createElement('div');
+    bubble.className = 'chat-bubble ai';
+    bubble.innerHTML = '<div class="chat-bubble-label">AI</div><div>' + escapeHtml(reply) + '</div>';
+    thinkingBubble.replaceWith(bubble);
+    setSendInProgress(false);
+    scrollToBottom();
+  }).catch(function(err) {
+    var bubble = document.createElement('div');
+    bubble.className = 'chat-bubble system';
+    bubble.textContent = '发送失败: ' + err;
+    thinkingBubble.replaceWith(bubble);
+    setSendInProgress(false);
+    scrollToBottom();
+  });
+}
+
+function onClear() {
+  if (!window.pywebview || !window.pywebview.api) {
+    appendSystemBubble('正在加载...');
+    return;
+  }
+  window.pywebview.api.clear_history().then(function() {
+    var list = document.getElementById('chat-list');
+    if (list) list.innerHTML = '';
+    window.__chat_history_loaded = false;
+  }).catch(function(err) {
+    appendSystemBubble('清空失败: ' + err);
+  });
+}
+
+function loadHistory() {
+  if (window.__chat_history_loaded) return;
+  if (!window.pywebview || !window.pywebview.api) return;
+  window.__chat_history_loaded = true;
+  window.pywebview.api.get_history(50).then(function(items) {
+    if (!items) return;
+    items.forEach(function(item) {
+      if (item.role === 'user') appendUserBubble(item.content);
+      else if (item.role === 'assistant') appendAIBubble(item.content);
+    });
+    scrollToBottom();
+  }).catch(function(err) {
+    appendSystemBubble('加载历史失败: ' + err);
+    window.__chat_history_loaded = false;
+  });
+}
+
+/* ═══════════════════════════════════════════
+   Config tab — Skills & MCP
+   ═══════════════════════════════════════════ */
+window.__mcp_servers = [];
+
+function loadSkills() {
+  var list = document.getElementById('skills-list');
+  if (!list) return;
+  list.innerHTML = '<div class="muted">加载中...</div>';
+  Promise.all([
+    window.pywebview.api.list_skills(),
+    window.pywebview.api.get_agent_config()
+  ]).then(function(results) {
+    var skills = results[0] || [];
+    var config = results[1] || {};
+    var enabled = config.skills_enabled || {};
+    if (skills.length === 0) {
+      list.innerHTML = '<div class="muted">尚未安装技能</div>';
+      return;
+    }
+    list.innerHTML = '';
+    skills.forEach(function(skill) {
+      var row = document.createElement('div');
+      row.className = 'skill-row';
+      var checked = enabled[skill.name] ? ' checked' : '';
+      var safeName = (skill.name || '').replace(/'/g, "\\'");
+      row.innerHTML = '<div><div style="font-weight:600;">' + escapeHtml(skill.name) + '</div>'
+        + '<div class="muted">' + escapeHtml(skill.description || '') + '</div></div>'
+        + '<label class="toggle-switch"><input type="checkbox"' + checked
+        + ' onchange="onSkillToggle(\'' + safeName + '\', this.checked)">'
+        + '<span class="slider"></span></label>';
+      list.appendChild(row);
+    });
+  }).catch(function(err) {
+    list.innerHTML = '<div class="muted">加载技能失败: ' + escapeHtml(String(err)) + '</div>';
+  });
+}
+
+function onSkillToggle(name, enabled) {
+  window.pywebview.api.toggle_skill(name, enabled).then(function(r) {
+    showToast('技能 ' + name + (r.enabled ? ' 已启用' : ' 已禁用'));
+  }).catch(function(err) {
+    showToast('操作失败: ' + err);
+  });
+}
+
+function loadMcpServers() {
+  var list = document.getElementById('mcp-list');
+  if (!list) return;
+  list.innerHTML = '<div class="muted">加载中...</div>';
+  window.pywebview.api.list_mcp_servers().then(function(servers) {
+    window.__mcp_servers = servers || [];
+    hideMcpForm();
+    if (window.__mcp_servers.length === 0) {
+      list.innerHTML = '<div class="muted">暂无 MCP 服务配置</div>';
+      return;
+    }
+    list.innerHTML = '';
+    window.__mcp_servers.forEach(function(srv, idx) {
+      var row = document.createElement('div');
+      row.className = 'mcp-row';
+      var transport = srv.transport || 'stdio';
+      var badge = '<span class="mcp-transport-badge ' + transport + '">'
+        + transport + '</span>';
+      var cmdText = srv.command_or_url || '';
+      var safeName = (srv.name || '').replace(/'/g, "\\'");
+      row.innerHTML = '<div style="flex:1;min-width:0;">'
+        + '<div><span class="name">' + escapeHtml(srv.name) + '</span> ' + badge + '</div>'
+        + '<div class="cmd">' + escapeHtml(cmdText) + '</div></div>'
+        + '<div class="btn-row" style="margin-top:0;">'
+        + '<button class="btn" onclick="onEditMcpServer(' + idx + ')">编辑</button>'
+        + '<button class="btn btn-danger" onclick="onDeleteMcpServer(\'' + safeName + '\')">删除</button>'
+        + '</div>';
+      list.appendChild(row);
+    });
+  }).catch(function(err) {
+    list.innerHTML = '<div class="muted">加载失败: ' + escapeHtml(String(err)) + '</div>';
+  });
+}
+
+function showMcpForm() {
+  var form = document.getElementById('mcp-form');
+  if (!form) return;
+  form.style.display = '';
+  document.getElementById('mcp-edit-index').value = '-1';
+  document.getElementById('mcp-name').value = '';
+  document.getElementById('mcp-transport').value = 'stdio';
+  document.getElementById('mcp-command').value = '';
+}
+
+function hideMcpForm() {
+  var form = document.getElementById('mcp-form');
+  if (form) form.style.display = 'none';
+}
+
+function onEditMcpServer(idx) {
+  var srv = window.__mcp_servers[idx];
+  if (!srv) return;
+  var form = document.getElementById('mcp-form');
+  if (!form) return;
+  form.style.display = '';
+  document.getElementById('mcp-edit-index').value = String(idx);
+  document.getElementById('mcp-name').value = srv.name || '';
+  document.getElementById('mcp-transport').value = srv.transport || 'stdio';
+  document.getElementById('mcp-command').value = srv.command_or_url || '';
+}
+
+function onSaveMcpServer() {
+  var name = document.getElementById('mcp-name').value.trim();
+  if (!name) { showToast('名称不能为空'); return; }
+  var transport = document.getElementById('mcp-transport').value;
+  var command_or_url = document.getElementById('mcp-command').value.trim();
+  var editIdx = parseInt(document.getElementById('mcp-edit-index').value, 10);
+  var servers = (window.__mcp_servers || []).map(function(s) {
+    return { name: s.name, transport: s.transport, command_or_url: s.command_or_url };
+  });
+  var entry = { name: name, transport: transport, command_or_url: command_or_url };
+  if (editIdx >= 0 && editIdx < servers.length) {
+    servers[editIdx] = entry;
+  } else {
+    servers.push(entry);
+  }
+  window.pywebview.api.save_mcp_servers(servers).then(function() {
+    hideMcpForm();
+    loadMcpServers();
+    showToast('MCP 服务已保存');
+  }).catch(function(err) {
+    showToast('保存失败: ' + err);
+  });
+}
+
+function onDeleteMcpServer(name) {
+  if (!confirm('确定删除 MCP 服务「' + name + '」？')) return;
+  var servers = (window.__mcp_servers || []).filter(function(s) { return s.name !== name; });
+  window.pywebview.api.save_mcp_servers(servers).then(function() {
+    loadMcpServers();
+    showToast('已删除 ' + name);
+  }).catch(function(err) {
+    showToast('删除失败: ' + err);
+  });
+}
+
+function showToast(msg) {
+  var el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(window.__toast_timer);
+  window.__toast_timer = setTimeout(function() { el.classList.remove('show'); }, 2500);
+}
+
+/* ═══════════════════════════════════════════
+   Init on DOMContentLoaded
+   ═══════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', function() {
+  showTab('tab-date');
+
+  document.querySelectorAll('.nav-bar .nav-item').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      showTab(this.getAttribute('data-tab'));
+    });
+  });
+
+  var sendBtn = document.getElementById('chat-send');
+  var input = document.getElementById('chat-input');
+  var clearBtn = document.getElementById('chat-clear');
+
+  if (sendBtn) sendBtn.addEventListener('click', onSend);
+  if (input) {
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        onSend();
+      }
+    });
+  }
+  if (clearBtn) clearBtn.addEventListener('click', onClear);
+});
 </script>
 
 </body>

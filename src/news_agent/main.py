@@ -247,7 +247,7 @@ def main(argv: list[str] | None = None) -> int:
     logger.debug("Tray daemon thread started")
 
     # ── 9. Create viewer window (main thread) ─────────────────────────────
-    viewer.create_window(cfg)
+    viewer.create_window(cfg, db_path=db_path)
     win = viewer.get_window()
     logger.debug("Viewer window created")
 

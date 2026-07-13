@@ -1,9 +1,13 @@
-"""Task T12: open-meteo weather forecast fetcher — free, no API key, 5 s timeout.
+"""Task T12: open-meteo weather forecast fetcher — free, no API key.
 
 Geocodes a city name → latitude/longitude, then fetches a single-day
 forecast (max/min temperature, precipitation, weather code).  Returns
 a normalised dict on success, ``None`` on any failure (caller displays
 "无法获取天气").
+
+Includes 3-retry loop (1.5 s gap) on transient upstream errors
+(502/503/504, connect/timeout). Default timeout raised from 5 s → 10 s
+after open-meteo (hosted in Germany) saw intermittent 503 outages.
 
 API endpoints
 -------------
@@ -17,6 +21,7 @@ collects no personal data.  All requests are anonymous.
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -25,6 +30,11 @@ import httpx
 from news_agent.logging_setup import get_logger
 
 logger = get_logger()
+
+# Retry config — transient open-meteo outages (503 Service Unavailable, etc.)
+_RETRY_ATTEMPTS = 3
+_RETRY_GAP_SECONDS = 1.5
+_RETRYABLE_STATUS = {502, 503, 504}
 
 # ---------------------------------------------------------------------------
 # WMO weather code → Chinese description (open-meteo reference)
@@ -188,13 +198,26 @@ def _fetch_forecast(
 # ---------------------------------------------------------------------------
 
 
-def fetch_weather(city: str, timeout: float = 5.0) -> dict[str, Any] | None:
+def _is_retryable(exc: BaseException) -> bool:
+    """Return True if *exc* is a transient open-meteo failure worth retrying."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in _RETRYABLE_STATUS
+    if isinstance(exc, (httpx.ConnectError, httpx.ReadTimeout, httpx.PoolTimeout)):
+        return True
+    return False
+
+
+def fetch_weather(
+    city: str, timeout: float = 10.0, _retry_attempts: int = _RETRY_ATTEMPTS
+) -> dict[str, Any] | None:
     """Fetch today's weather forecast for *city* from open-meteo.
 
     Args:
         city: City name for geocoding (e.g. ``"Beijing"``).
-        timeout: HTTP timeout in seconds (default 5 s, tuned for China ISPs
+        timeout: HTTP timeout in seconds (default 10 s, tuned for China ISPs
             where open-meteo (hosted in Germany) may be throttled).
+        _retry_attempts: Retry attempts on transient upstream errors
+            (502/503/504, connect/timeout). Default 3.
 
     Returns:
         A dict with keys ``city``, ``resolved_name``, ``latitude``,
@@ -202,11 +225,32 @@ def fetch_weather(city: str, timeout: float = 5.0) -> dict[str, Any] | None:
         Returns ``None`` on any failure — **never raises**.
     """
     with httpx.Client(timeout=httpx.Timeout(timeout)) as client:
-        geo = _geocode(city, client)
-        if geo is None:
-            return None
-        lat, lon, resolved_name = geo
-        return _fetch_forecast(lat, lon, city, resolved_name, client)
+        for attempt in range(1, _retry_attempts + 1):
+            try:
+                geo = _geocode(city, client)
+                if geo is None:
+                    # geocode failure with no retryable exception → don't retry
+                    return None
+                lat, lon, resolved_name = geo
+                result = _fetch_forecast(lat, lon, city, resolved_name, client)
+                if result is not None:
+                    return result
+                # forecast parsing failure (non-exception path) → don't retry
+                return None
+            except Exception as exc:
+                if attempt < _retry_attempts and _is_retryable(exc):
+                    logger.info(
+                        "weather transient failure for %s (attempt %d/%d): %s — retrying in %.1fs",
+                        city, attempt, _retry_attempts, exc, _RETRY_GAP_SECONDS,
+                    )
+                    time.sleep(_RETRY_GAP_SECONDS)
+                    continue
+                logger.warning(
+                    "weather fetch failed for %s after %d attempt(s): %s",
+                    city, attempt, exc,
+                )
+                return None
+        return None
 
 
 # ---------------------------------------------------------------------------

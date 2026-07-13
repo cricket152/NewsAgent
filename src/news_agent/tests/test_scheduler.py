@@ -58,7 +58,7 @@ class TestIsRegistered:
     def test_is_worker_registered_true(self, mock_subprocess: MagicMock) -> None:
         """Returns True when CSV output contains NewsAgentWorker."""
         mock_result = MagicMock(returncode=0)
-        mock_result.stdout = "TaskName\r\nNewsAgentWorker_06:00\r\n"
+        mock_result.stdout = "TaskName\r\nNewsAgentWorker_06-00\r\n"
         mock_subprocess.return_value = mock_result
 
         result = is_worker_registered()

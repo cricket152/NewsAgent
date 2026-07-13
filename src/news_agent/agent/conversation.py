@@ -27,6 +27,24 @@ def _resolve_db(db_path: Path | None) -> Path:
     return Path(db_path) if db_path is not None else _DEFAULT_DB
 
 
+def _effective_system_prompt(custom_prompt: str | None = None) -> str:
+    """Return the effective system prompt for an LLM call.
+
+    When *custom_prompt* is given it is used as-is.  Otherwise any active
+    prompt-skill content from ``agent_config.json`` is prepended before the
+    default ``SYSTEM_PROMPT``.
+    """
+    if custom_prompt is not None:
+        return custom_prompt
+    # Lazy import to avoid circular dependency at module level
+    from news_agent.agent.skills import load_active_skills_content  # noqa: PLC0415
+
+    active = load_active_skills_content()
+    if active:
+        return active + "\n\n" + SYSTEM_PROMPT
+    return SYSTEM_PROMPT
+
+
 # ── Public API ───────────────────────────────────────────────────────
 
 
@@ -56,7 +74,7 @@ def send_message(
         return "请输入消息"
 
     path = _resolve_db(db_path)
-    prompt = system_prompt if system_prompt is not None else SYSTEM_PROMPT
+    prompt = _effective_system_prompt(system_prompt)
 
     # ── persist user message ──────────────────────────────────────
     w_conn = db.get_write_connection(path)
