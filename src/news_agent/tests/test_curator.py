@@ -98,6 +98,21 @@ def test_run_curator_cost_ceiling_headlines_only(tmp_db_path: Path) -> None:
     mock_chat.assert_not_called()
 
 
+def test_run_curator_keeps_a_local_summary_when_llm_fails(tmp_db_path: Path) -> None:
+    """A blocked LLM must not leave the refreshed home page summary empty."""
+    init_db(tmp_db_path)
+    cfg = _make_config_with_sources()
+
+    with patch("news_agent.curator.chat", side_effect=RuntimeError("blocked")):
+        with patch("news_agent.fetchers.fortune.fetch_fortune", return_value=_MOCK_FORTUNE):
+            with patch("news_agent.fetchers.weather.fetch_weather", return_value=None):
+                with patch("news_agent.curator._dispatch_fetcher", return_value=[dict(FAKE_ARTICLE)]):
+                    result = run_curator(cfg, db_path=tmp_db_path)
+
+    assert result["daily_summary"]
+    assert "AI" in result["daily_summary"]
+
+
 def test_run_curator_graceful_degradation(tmp_db_path: Path) -> None:
     """When one fetcher raises, other domains are still fetched."""
     init_db(tmp_db_path)

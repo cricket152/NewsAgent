@@ -9,6 +9,7 @@ All internal timestamps are stored as UTC ISO 8601 strings with "Z" suffix.
 from __future__ import annotations
 
 import sqlite3
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -107,9 +108,17 @@ def init_db(db_path: Path) -> None:
 
             CREATE TABLE IF NOT EXISTS conversations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL DEFAULT 'legacy',
                 role TEXT NOT NULL CHECK(role IN ('user','assistant','system')),
                 content TEXT NOT NULL,
                 created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS conversation_sessions (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS daily_usage (
@@ -117,6 +126,20 @@ def init_db(db_path: Path) -> None:
                 tokens_used INTEGER NOT NULL DEFAULT 0
             );
             """
+        )
+
+        conversation_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(conversations)")
+        }
+        if "session_id" not in conversation_columns:
+            conn.execute(
+                "ALTER TABLE conversations ADD COLUMN session_id TEXT NOT NULL DEFAULT 'legacy'"
+            )
+        now = _utcnow_iso()
+        conn.execute(
+            """INSERT OR IGNORE INTO conversation_sessions
+               (id, title, created_at, updated_at) VALUES ('legacy', '历史对话', ?, ?)""",
+            (now, now),
         )
 
         existing = conn.execute("SELECT COUNT(*) FROM schema_version").fetchone()
@@ -202,27 +225,81 @@ def get_recent_articles(
 # ---------------------------------------------------------------------------
 
 
-def insert_conversation(conn: sqlite3.Connection, role: str, content: str) -> int:
+def insert_conversation(
+    conn: sqlite3.Connection, role: str, content: str, session_id: str = "legacy"
+) -> int:
     """Insert a conversation message and return its auto-generated id."""
     cursor = conn.execute(
-        "INSERT INTO conversations (role, content, created_at) VALUES (?, ?, ?)",
-        (role, content, _utcnow_iso()),
+        "INSERT INTO conversations (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+        (session_id, role, content, _utcnow_iso()),
+    )
+    conn.execute(
+        "UPDATE conversation_sessions SET updated_at = ? WHERE id = ?",
+        (_utcnow_iso(), session_id),
     )
     return cursor.lastrowid
 
 
 def get_recent_conversations(
-    conn: sqlite3.Connection, limit: int = 50
+    conn: sqlite3.Connection, limit: int = 50, session_id: str | None = None
 ) -> list[dict]:
     """Return recent conversation messages, newest first."""
-    rows = conn.execute(
-        "SELECT * FROM conversations ORDER BY created_at DESC LIMIT ?",
-        (limit,),
-    ).fetchall()
+    if session_id is None:
+        rows = conn.execute(
+            "SELECT * FROM conversations ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM conversations WHERE session_id = ? ORDER BY created_at DESC LIMIT ?",
+            (session_id, limit),
+        ).fetchall()
     return [dict(r) for r in rows]
 
 
-def truncate_older_than_days(conn: sqlite3.Connection, days: int = 30) -> int:
+def create_conversation_session(conn: sqlite3.Connection, title: str = "新对话") -> dict:
+    """Create and return an independent saved conversation session."""
+    session_id = uuid.uuid4().hex
+    now = _utcnow_iso()
+    conn.execute(
+        "INSERT INTO conversation_sessions (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
+        (session_id, title, now, now),
+    )
+    return {"id": session_id, "title": title, "created_at": now, "updated_at": now}
+
+
+def list_conversation_sessions(conn: sqlite3.Connection) -> list[dict]:
+    """Return saved conversations with their latest-message preview."""
+    rows = conn.execute(
+        """SELECT s.id, s.title, s.created_at, s.updated_at,
+                  COUNT(c.id) AS message_count,
+                  (SELECT content FROM conversations x WHERE x.session_id = s.id
+                   ORDER BY x.created_at DESC, x.id DESC LIMIT 1) AS preview
+           FROM conversation_sessions s
+           LEFT JOIN conversations c ON c.session_id = s.id
+           GROUP BY s.id
+           ORDER BY s.updated_at DESC, s.created_at DESC"""
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def conversation_session_exists(conn: sqlite3.Connection, session_id: str) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM conversation_sessions WHERE id = ?", (session_id,)
+    ).fetchone() is not None
+
+
+def update_conversation_session_title(
+    conn: sqlite3.Connection, session_id: str, title: str
+) -> None:
+    conn.execute(
+        "UPDATE conversation_sessions SET title = ?, updated_at = ? WHERE id = ?",
+        (title, _utcnow_iso(), session_id),
+    )
+
+
+def truncate_older_than_days(
+    conn: sqlite3.Connection, days: int = 30, session_id: str | None = None
+) -> int:
     """Delete conversation messages older than *days*.
 
     Can be paired with a ``[已省略早期对话]`` marker inserted by the caller
@@ -232,10 +309,13 @@ def truncate_older_than_days(conn: sqlite3.Connection, days: int = 30) -> int:
         Number of rows deleted.
     """
     cutoff = _utc_cutoff(days=days)
-    cursor = conn.execute(
-        "DELETE FROM conversations WHERE created_at < ?",
-        (cutoff,),
-    )
+    if session_id is None:
+        cursor = conn.execute("DELETE FROM conversations WHERE created_at < ?", (cutoff,))
+    else:
+        cursor = conn.execute(
+            "DELETE FROM conversations WHERE session_id = ? AND created_at < ?",
+            (session_id, cutoff),
+        )
     return cursor.rowcount
 
 

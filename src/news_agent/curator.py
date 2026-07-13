@@ -27,6 +27,13 @@ logger = get_logger()
 
 MAX_ARTICLES_PER_DOMAIN = 5
 
+# The home page renders Markdown safely and styles bold text as an important
+# highlight. Restrict the model to standard Markdown rather than raw HTML.
+_IMPORTANT_MARKER_INSTRUCTION = (
+    "\n请使用标准 Markdown 输出。把你认为最重要的事实或结论用 **粗体** 标记；"
+    "每段最多标记一到两处，不要输出任何 HTML。"
+)
+
 # ── AI prompt templates ──────────────────────────────────────────────────────
 
 _ARTICLE_SUMMARY_SYSTEM = (
@@ -161,6 +168,34 @@ def _load_cached_weather() -> dict[str, Any] | None:
     except Exception:
         logger.debug("cached weather fallback miss", exc_info=True)
         return None
+
+
+def _load_cached_daily_summary() -> str:
+    """Return the previous non-empty daily summary, if one is available."""
+    try:
+        import json
+        import os
+
+        state_path = Path(os.environ.get("APPDATA", "")) / "news-agent" / "latest_state.json"
+        with state_path.open("r", encoding="utf-8") as fh:
+            state = json.load(fh)
+        summary = state.get("daily_summary") if isinstance(state, dict) else ""
+        return summary.strip() if isinstance(summary, str) else ""
+    except (OSError, ValueError, TypeError):
+        return ""
+
+
+def _build_local_daily_summary(articles_by_domain: dict[str, list[dict[str, Any]]]) -> str:
+    """Build a readable fallback when the remote LLM is temporarily unavailable."""
+    headlines: list[str] = []
+    for articles in articles_by_domain.values():
+        if articles:
+            title = str(articles[0].get("title", "")).strip()
+            if title:
+                headlines.append(title)
+    if not headlines:
+        return ""
+    return "新闻已完成刷新，但 AI 概要暂时不可用。本次重点包括：" + "；".join(headlines[:4]) + "。"
 
 
 # ── public API ───────────────────────────────────────────────────────────────
@@ -338,7 +373,10 @@ def _run_curator_impl(
 
         if titles:
             daily_messages: list[dict[str, str]] = [
-                {"role": "system", "content": _DAILY_SUMMARY_SYSTEM},
+                {
+                    "role": "system",
+                    "content": _DAILY_SUMMARY_SYSTEM + _IMPORTANT_MARKER_INSTRUCTION,
+                },
                 {
                     "role": "user",
                     "content": (
@@ -363,6 +401,17 @@ def _run_curator_impl(
             except Exception:
                 logger.exception("LLM daily summary failed")
                 daily_summary = ""
+
+    # Do not replace an existing overview with an empty panel just because a
+    # provider rejects a single refresh request. Prefer the last good summary;
+    # if none exists, present a local headline-based fallback instead.
+    if not daily_summary and flat_articles:
+        daily_summary = _load_cached_daily_summary()
+        if daily_summary:
+            logger.warning("Using the previous daily summary after LLM refresh failure")
+        else:
+            daily_summary = _build_local_daily_summary(articles_by_domain)
+            logger.warning("Using local daily-summary fallback after LLM refresh failure")
 
     # 7. Construct return dict
     return {

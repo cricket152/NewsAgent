@@ -6,7 +6,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 from news_agent.agent.conversation import clear_history, get_history, send_message
-from news_agent.db import get_write_connection, init_db, insert_conversation
+from news_agent.db import (
+    create_conversation_session,
+    get_recent_conversations,
+    get_write_connection,
+    init_db,
+    insert_conversation,
+)
 
 
 def test_send_message_roundtrip(tmp_db_path: Path) -> None:
@@ -61,6 +67,24 @@ def test_clear_history(tmp_db_path: Path) -> None:
 
     history = get_history(db_path=tmp_db_path)
     assert len(history) == 0
+
+
+def test_conversation_sessions_keep_contexts_isolated(tmp_db_path: Path) -> None:
+    init_db(tmp_db_path)
+    conn = get_write_connection(tmp_db_path)
+    try:
+        first = create_conversation_session(conn, "First")
+        second = create_conversation_session(conn, "Second")
+        insert_conversation(conn, "user", "first message", session_id=first["id"])
+        insert_conversation(conn, "user", "second message", session_id=second["id"])
+        conn.commit()
+        first_rows = get_recent_conversations(conn, session_id=first["id"])
+        second_rows = get_recent_conversations(conn, session_id=second["id"])
+    finally:
+        conn.close()
+
+    assert [row["content"] for row in first_rows] == ["first message"]
+    assert [row["content"] for row in second_rows] == ["second message"]
 
 
 def test_send_message_empty_input(tmp_db_path: Path) -> None:

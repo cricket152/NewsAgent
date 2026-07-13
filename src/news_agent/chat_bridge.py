@@ -25,6 +25,7 @@ from typing import Callable
 from news_agent.agent.conversation import (
     clear_history as _clear_history,
 )
+from news_agent import db as _db
 from news_agent.agent.conversation import (
     get_history as _get_history,
 )
@@ -123,6 +124,27 @@ class ChatBridge:
         # Else, conversation.py's internal _resolve_db() handles the default.
         self._db_path = db_path
         self._refresh_runner = _NewsRefreshRunner()
+        self._session_id: str | None = None
+
+    def _conversation_db_path(self) -> Path:
+        return self._db_path or Path(os.environ.get("APPDATA", "")) / "news-agent" / "data" / "state.db"
+
+    def _ensure_session(self) -> str:
+        if self._session_id is not None:
+            return self._session_id
+        path = self._conversation_db_path()
+        _db.init_db(path)
+        conn = _db.get_write_connection(path)
+        try:
+            sessions = _db.list_conversation_sessions(conn)
+            if sessions:
+                self._session_id = str(sessions[0]["id"])
+            else:
+                self._session_id = str(_db.create_conversation_session(conn)["id"])
+            conn.commit()
+        finally:
+            conn.close()
+        return self._session_id
 
     def set_refresh_callback(self, callback: Callable[[], None]) -> None:
         """Set the view reload callback run after a successful refresh."""
@@ -175,7 +197,9 @@ class ChatBridge:
             return "请输入有效内容。"
 
         try:
-            return _send_message(stripped, db_path=self._db_path)
+            return _send_message(
+                stripped, db_path=self._db_path, session_id=self._ensure_session()
+            )
         except ValueError as exc:
             logger.warning("send_message validation error: %s", exc)
             return str(exc)
@@ -191,7 +215,9 @@ class ChatBridge:
         if limit < 1:
             return []
         try:
-            return _get_history(limit=limit, db_path=self._db_path)
+            return _get_history(
+                limit=limit, db_path=self._db_path, session_id=self._ensure_session()
+            )
         except Exception:
             logger.warning("get_history failed", exc_info=True)
             return []
@@ -199,10 +225,61 @@ class ChatBridge:
     def clear_history(self) -> int:
         """Delete all conversation rows.  Returns 0 on error."""
         try:
-            return _clear_history(db_path=self._db_path)
+            return _clear_history(db_path=self._db_path, session_id=self._ensure_session())
         except Exception:
             logger.warning("clear_history failed", exc_info=True)
             return 0
+
+    def list_conversations(self) -> list[dict]:
+        """Return all saved conversations, newest first."""
+        try:
+            self._ensure_session()
+            conn = _db.get_read_only_connection(self._conversation_db_path())
+            try:
+                sessions = _db.list_conversation_sessions(conn)
+            finally:
+                conn.close()
+            active_id = self._ensure_session()
+            for session in sessions:
+                session["active"] = session["id"] == active_id
+            return sessions
+        except Exception:
+            logger.warning("list_conversations failed", exc_info=True)
+            return []
+
+    def new_conversation(self) -> dict:
+        """Create an independent empty conversation without deleting old ones."""
+        try:
+            path = self._conversation_db_path()
+            _db.init_db(path)
+            conn = _db.get_write_connection(path)
+            try:
+                session = _db.create_conversation_session(conn)
+                conn.commit()
+            finally:
+                conn.close()
+            self._session_id = str(session["id"])
+            return session
+        except Exception as exc:
+            logger.warning("new_conversation failed", exc_info=True)
+            return {"error": str(exc)}
+
+    def select_conversation(self, session_id: str) -> dict:
+        """Switch active AI context to an existing saved conversation."""
+        try:
+            self._ensure_session()
+            conn = _db.get_read_only_connection(self._conversation_db_path())
+            try:
+                exists = _db.conversation_session_exists(conn, session_id)
+            finally:
+                conn.close()
+            if not exists:
+                return {"selected": False, "error": "conversation not found"}
+            self._session_id = session_id
+            return {"selected": True, "id": session_id}
+        except Exception as exc:
+            logger.warning("select_conversation failed", exc_info=True)
+            return {"selected": False, "error": str(exc)}
 
     def get_status(self) -> dict:
         """Lightweight readiness probe — checks whether the LLM budget is available.
