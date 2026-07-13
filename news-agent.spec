@@ -33,6 +33,7 @@ ENTRY_WORKER = SRC_DIR / "news_agent" / "worker.py"
 
 # Data files
 TEMPLATE_DAILY = SRC_DIR / "news_agent" / "templates" / "daily.html"
+TEMPLATE_DAILY_STYLE = SRC_DIR / "news_agent" / "templates" / "daily.css"
 CONFIG_EXAMPLE = SPEC_DIR / "config.yaml.example"
 
 # Executable names (displayed in Task Manager / Explorer)
@@ -120,6 +121,11 @@ datas_shared: list[tuple[str, str]] = []
 if TEMPLATE_DAILY.exists():
     datas_shared.append(
         (str(TEMPLATE_DAILY), "news_agent/templates")
+    )
+
+if TEMPLATE_DAILY_STYLE.exists():
+    datas_shared.append(
+        (str(TEMPLATE_DAILY_STYLE), "news_agent/templates")
     )
 
 if CONFIG_EXAMPLE.exists():

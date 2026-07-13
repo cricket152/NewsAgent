@@ -43,6 +43,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+news_agent = ["templates/*.html", "templates/*.css"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"

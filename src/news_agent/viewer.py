@@ -29,6 +29,15 @@ DEFAULT_HEIGHT = 600
 
 logger = get_logger()
 
+# Windows DWM attributes used to keep the native title bar aligned with the
+# application's light interface. Unsupported attributes are ignored safely on
+# older Windows builds.
+DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+DWMWA_CAPTION_COLOR = 35
+DWMWA_TEXT_COLOR = 36
+COLORREF_WHITE = 0x00FFFFFF
+COLORREF_BLACK = 0x00000000
+
 # ---------------------------------------------------------------------------
 # Internal state
 # ---------------------------------------------------------------------------
@@ -70,6 +79,52 @@ def _get_chat_bridge(db_path: Path | None = None) -> ChatBridge:
         _chat_bridge = ChatBridge(db_path=db_path)
         logger.debug("ChatBridge initialised")
     return _chat_bridge
+
+
+def _apply_light_title_bar(window: webview.Window) -> None:
+    """Force a white Windows title bar with dark caption text.
+
+    pywebview follows the operating-system app theme by default, which gives
+    this otherwise light interface a black native title bar when Windows uses
+    dark mode. DWM color attributes are best-effort so older Windows versions
+    continue to work without affecting window creation.
+    """
+    if os.name != "nt":
+        return
+
+    native = getattr(window, "native", None)
+    handle = getattr(native, "Handle", None)
+    if handle is None:
+        logger.debug("Native window handle unavailable; title bar unchanged")
+        return
+
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        hwnd = int(handle.ToInt32())
+        dwm_set_window_attribute = ctypes.windll.dwmapi.DwmSetWindowAttribute
+        dwm_set_window_attribute.argtypes = [
+            wintypes.HWND,
+            wintypes.DWORD,
+            ctypes.c_void_p,
+            wintypes.DWORD,
+        ]
+
+        for attribute, color in (
+            (DWMWA_USE_IMMERSIVE_DARK_MODE, 0),
+            (DWMWA_CAPTION_COLOR, COLORREF_WHITE),
+            (DWMWA_TEXT_COLOR, COLORREF_BLACK),
+        ):
+            value = ctypes.c_int(color)
+            dwm_set_window_attribute(
+                hwnd,
+                attribute,
+                ctypes.byref(value),
+                ctypes.sizeof(value),
+            )
+    except Exception:
+        logger.debug("Unable to apply light native title bar", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +216,8 @@ def create_window(
         on_top=False,
         js_api=bridge,
     )
+    if window is not None:
+        window.events.shown += lambda: _apply_light_title_bar(window)
     _current_window = window
     return window
 

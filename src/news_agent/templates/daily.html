@@ -5,352 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>每日简报</title>
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html { font-size: 14px; }
-  body {
-    font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Hiragino Sans GB", sans-serif;
-    line-height: 1.6;
-    color: #2c3e50;
-    background: #f7f9fa;
-    padding: 0;
-    min-height: 100vh;
-  }
-
-  /* Scrollbar */
-  ::-webkit-scrollbar { width: 6px; }
-  ::-webkit-scrollbar-track { background: #eef2f5; }
-  ::-webkit-scrollbar-thumb { background: #0e7c86; border-radius: 3px; }
-
-  /* ── Navigation Bar (sticky top) ── */
-  .nav-bar {
-    position: sticky; top: 0; z-index: 100;
-    display: flex; align-items: stretch;
-    background: linear-gradient(135deg, #e8f4f6 0%, #d4edf0 100%);
-    border-bottom: 2px solid #0e7c86;
-    height: 48px;
-  }
-  .nav-bar .nav-item {
-    flex: 1;
-    background: transparent;
-    border: none;
-    border-bottom: 3px solid transparent;
-    cursor: pointer;
-    padding: 0 20px;
-    font-size: 14px;
-    color: #0e7c86;
-    font-family: inherit;
-    transition: background 0.2s;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .nav-bar .nav-item:hover {
-    background: rgba(14, 124, 134, 0.08);
-  }
-  .nav-bar .nav-item.active {
-    border-bottom-color: #0e7c86;
-    font-weight: 700;
-    background: linear-gradient(180deg, #d4edf0, #ffffff);
-  }
-  .nav-label-short { display: none; }
-  @media (max-width: 600px) {
-    .nav-label-full { display: none; }
-    .nav-label-short { display: inline; }
-    .nav-bar .nav-item { padding: 0 8px; font-size: 13px; }
-  }
-
-  /* Container */
-  .container { max-width: 768px; margin: 0 auto; padding: 16px 16px 80px; }
-
-  /* Tab panes */
-  .tab-pane { display: none; }
-  .tab-pane.active { display: block; }
-  #tab-chat.active { display: flex; flex-direction: column; }
-
-  /* Date header inside tab 1 */
-  .date-header-big {
-    font-size: 22px; font-weight: 700; color: #0e7c86;
-    margin-bottom: 4px;
-  }
-  .date-header-sub {
-    font-size: 12px; color: #7a8a99; margin-bottom: 16px;
-  }
-
-  /* Cards */
-  .card {
-    background: #fff; border-radius: 12px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-    padding: 16px; margin-bottom: 12px;
-  }
-
-  /* Two-column row: fortune + weather */
-  .cards-row { display: flex; gap: 12px; margin-bottom: 12px; }
-  .cards-row .card { margin-bottom: 0; }
-
-  /* Fortune */
-  .fortune-card { flex: 1 1 58%; background: #fffbf0; }
-  .fortune-main { font-size: 16px; font-weight: 600; color: #5a3e1b; margin-bottom: 8px; }
-  .fortune-yi { color: #2d8a3c; margin-bottom: 2px; }
-  .fortune-yi::before { content: "宜 "; font-weight: 700; }
-  .fortune-ji { color: #c0392b; }
-  .fortune-ji::before { content: "忌 "; font-weight: 700; }
-
-  /* Weather */
-  .weather-card { flex: 0 0 38%; }
-  .weather-city { font-size: 15px; font-weight: 600; color: #0e7c86; margin-bottom: 4px; }
-  .weather-desc { font-size: 13px; color: #4a5568; }
-  .weather-temp { font-size: 18px; font-weight: 700; color: #2c3e50; margin: 4px 0; }
-  .weather-none { color: #7a8a99; font-style: italic; }
-
-  /* Daily summary */
-  .summary-heading { font-size: 15px; font-weight: 700; color: #0e7c86; margin-bottom: 6px; }
-  .summary-text { color: #4a5568; line-height: 1.7; }
-  .summary-notice {
-    background: #fff8e1; border-left: 4px solid #f0c040; border-radius: 6px;
-    padding: 10px 14px; color: #8a6d14; font-size: 13px;
-  }
-
-  /* Domain sections */
-  .domain-section { margin-bottom: 18px; }
-  .domain-heading {
-    font-size: 15px; font-weight: 700; color: #0e7c86;
-    padding-bottom: 6px; margin-bottom: 8px;
-    border-bottom: 2px solid #0e7c86;
-  }
-  .article-row { padding: 8px 0; border-bottom: 1px solid #eef2f5; }
-  .article-row:last-child { border-bottom: none; }
-  .article-title { display: block; }
-  .article-title a {
-    color: #0e7c86; text-decoration: none; font-weight: 500;
-  }
-  .article-title a:hover { text-decoration: underline; }
-  .article-meta { font-size: 12px; color: #7a8a99; line-height: 1.5; margin-top: 2px; }
-  .article-date { color: #a0aec0; }
-
-  /* Domain header wrapper + toggle button */
-  .domain-header-wrapper {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .section-toggle {
-    cursor: pointer;
-    border: none;
-    background: none;
-    font-size: 14px;
-    color: #666;
-    padding: 0 4px;
-    float: right;
-  }
-  .section-toggle:hover {
-    color: #2d8a3c;
-  }
-
-  /* Footer */
-  .footer {
-    position: fixed; bottom: 0; left: 0; right: 0;
-    background: #eef2f5; border-top: 1px solid #dde4e9;
-    text-align: center; padding: 8px 16px;
-    font-size: 11px; color: #7a8a99; z-index: 5;
-  }
-
-  /* Muted text utility */
-  .muted { color: #7a8a99; }
-
-  /* ── Chat UI ── */
-  .chat-list {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding: 12px;
-    max-height: calc(100vh - 240px);
-  }
-  .chat-bubble {
-    max-width: 78%;
-    padding: 10px 14px;
-    border-radius: 12px;
-    margin-bottom: 8px;
-    word-break: break-word;
-    line-height: 1.6;
-    font-size: 14px;
-  }
-  .chat-bubble.user {
-    margin-left: auto;
-    background: #f0f4f8;
-  }
-  .chat-bubble.ai {
-    margin-right: auto;
-    background: #fff;
-    border: 1px solid #e6f2f4;
-  }
-  .chat-bubble.system {
-    margin: 4px auto;
-    background: transparent;
-    color: #888;
-    font-style: italic;
-    font-size: 12px;
-    max-width: 90%;
-    text-align: center;
-    padding: 6px 10px;
-    border-radius: 6px;
-  }
-  .chat-bubble-label {
-    font-size: 11px;
-    color: #7a8a99;
-    margin-bottom: 2px;
-  }
-  .chat-bubble.user .chat-bubble-label { text-align: right; }
-
-  /* Thinking dots animation (CSS only) */
-  .thinking-dots {
-    display: inline-flex;
-    gap: 4px;
-    align-items: center;
-    padding: 2px 0;
-  }
-  .thinking-dots span {
-    width: 6px; height: 6px;
-    background: #0e7c86;
-    border-radius: 50%;
-    display: inline-block;
-    animation: thinking-pulse 1.4s infinite;
-    animation-fill-mode: both;
-  }
-  .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
-  .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
-  @keyframes thinking-pulse {
-    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
-    40% { opacity: 1; transform: scale(1); }
-  }
-
-  /* Chat bar (bottom input area) */
-  .chat-bar {
-    flex-shrink: 0;
-    padding: 10px 12px;
-    background: #fff;
-    border-top: 1px solid #eef2f5;
-    display: flex;
-    gap: 8px;
-    align-items: flex-end;
-  }
-  .chat-bar textarea {
-    flex: 1;
-    resize: none;
-    border: 1px solid #dde4e9;
-    border-radius: 8px;
-    padding: 8px 10px;
-    font-family: inherit;
-    font-size: 14px;
-    line-height: 1.5;
-    outline: none;
-  }
-  .chat-bar textarea:focus {
-    border-color: #0e7c86;
-  }
-  .chat-bar textarea:disabled {
-    background: #f7f9fa;
-  }
-  .chat-bar .btn-send {
-    background: #0e7c86;
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    padding: 8px 16px;
-    font-size: 14px;
-    cursor: pointer;
-    font-family: inherit;
-    white-space: nowrap;
-  }
-  .chat-bar .btn-send:hover { background: #0a6a72; }
-  .chat-bar .btn-send:disabled {
-    background: #b0cdd1;
-    cursor: not-allowed;
-  }
-  .chat-bar .btn-clear {
-    background: transparent;
-    color: #7a8a99;
-    border: 1px solid #dde4e9;
-    border-radius: 8px;
-    padding: 8px 10px;
-    font-size: 12px;
-    cursor: pointer;
-    font-family: inherit;
-    white-space: nowrap;
-  }
-  .chat-bar .btn-clear:hover { background: #f7f9fa; }
-
-  /* ── Toast notification ── */
-  .toast {
-    position: fixed; bottom: 60px; left: 50%;
-    transform: translateX(-50%) translateY(10px);
-    opacity: 0; z-index: 100;
-    background: #333; color: #fff; padding: 10px 18px;
-    border-radius: 8px; font-size: 13px;
-    transition: opacity 0.3s, transform 0.3s;
-    pointer-events: none;
-  }
-  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-
-  /* ── Config tab: skills & MCP rows ── */
-  .skill-row, .mcp-row {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 10px 0; border-bottom: solid 1px #e8eef0;
-  }
-  .skill-row:last-child, .mcp-row:last-child { border-bottom: none; }
-  .mcp-row .name { font-weight: 600; }
-  .mcp-row .cmd {
-    font-size: 12px; color: #888; margin-top: 4px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    max-width: 400px; font-family: monospace;
-  }
-
-  /* Toggle switch (iOS-style) */
-  .toggle-switch {
-    width: 44px; height: 24px; position: relative;
-    display: inline-block; cursor: pointer; flex-shrink: 0;
-  }
-  .toggle-switch input { display: none; }
-  .toggle-switch .slider {
-    position: absolute; inset: 0; background: #ccc;
-    border-radius: 12px; transition: background 0.2s;
-  }
-  .toggle-switch .slider::before {
-    content: ""; width: 20px; height: 20px; position: absolute;
-    left: 2px; top: 2px; background: white; border-radius: 50%;
-    transition: transform 0.2s;
-  }
-  .toggle-switch input:checked + .slider { background: #2d8a3c; }
-  .toggle-switch input:checked + .slider::before { transform: translateX(20px); }
-
-  /* MCP transport badge */
-  .mcp-transport-badge {
-    display: inline-block; padding: 2px 8px; border-radius: 12px;
-    font-size: 11px; color: white; margin-right: 8px;
-  }
-  .mcp-transport-badge.stdio { background: #3498db; }
-  .mcp-transport-badge.http { background: #e67e22; }
-
-  /* MCP add/edit form */
-  .mcp-form {
-    margin: 12px 0; padding: 12px; border: 1px dashed #b0c8cc;
-    border-radius: 6px; background: #fbfff9;
-  }
-  .mcp-form input, .mcp-form select {
-    width: 100%; padding: 6px 8px; margin: 6px 0;
-    border: 1px solid #ccc; border-radius: 4px;
-    font-size: 13px; box-sizing: border-box;
-  }
-
-  /* Buttons */
-  .btn {
-    padding: 6px 14px; border: none; border-radius: 4px;
-    cursor: pointer; font-size: 12px; background: #2d8a3c; color: white;
-  }
-  .btn-secondary { background: #888; }
-  .btn-danger { background: #c0392b; }
-  .btn-row { display: flex; gap: 8px; margin-top: 8px; }
-
-  /* Config card heading helper */
-  .cfg-heading { font-size: 15px; font-weight: 700; color: #0e7c86; margin-bottom: 4px; }
-  .cfg-desc { margin-bottom: 12px; }
+{% include "daily.css" %}
 </style>
 </head>
 <body>
@@ -374,22 +29,32 @@
 
 {# ── Navigation Bar ── #}
 <nav class="nav-bar">
+  <div class="brand-mark" aria-label="NewsAgent">
+    <span class="brand-monogram">N</span>
+    <span class="brand-name">News<br>Agent</span>
+  </div>
   <button class="nav-item active" data-tab="tab-date">
-    <span class="nav-label-full">{{ tab1_title }}</span>
-    <span class="nav-label-short">{{ tab1_short }}</span>
+    <span class="nav-index">01</span>
+    <span class="nav-label-full">今日</span>
+    <span class="nav-label-short">今日</span>
   </button>
   <button class="nav-item" data-tab="tab-news">
+    <span class="nav-index">02</span>
     <span class="nav-label-full">新闻</span>
     <span class="nav-label-short">新闻</span>
   </button>
   <button class="nav-item" data-tab="tab-chat">
-    <span class="nav-label-full">Agent对话</span>
+    <span class="nav-index">03</span>
+    <span class="nav-label-full">对话</span>
     <span class="nav-label-short">对话</span>
   </button>
   <button class="nav-item" data-tab="tab-config">
+    <span class="nav-index">04</span>
     <span class="nav-label-full">配置</span>
     <span class="nav-label-short">配置</span>
   </button>
+  <div class="nav-spacer"></div>
+  <div class="nav-status"><span></span>本地运行</div>
 </nav>
 
 <div class="container">
@@ -400,20 +65,25 @@
   <div id="tab-date" class="tab-pane active">
 
     {# Big formatted date header #}
-    <div class="date-header-big">
-      {% set sd = solar_date | default("", true) %}
-      {% if sd %}
-        {% set parts = sd.split("-") %}
-        {% if parts | length == 3 %}{{ parts[0] }}年{{ parts[1] | int }}月{{ parts[2] | int }}日{% else %}{{ sd }}{% endif %}
-      {% else %}
-        日期未设置
-      {% endif %}
-      {% set wd = weekday | default(fortune.weekday if fortune else "", true) %}
-      {% if wd %} {{ wd }}{% endif %}
-    </div>
-    <div class="date-header-sub">
-      {% set fa = fetched_at | default("", true) %}
-      {% if fa | length > 11 %}更新于 {{ fa[11:19] }}{% elif fa %}更新于 {{ fa }}{% endif %}
+    <div class="page-intro">
+      <div>
+        <div class="eyebrow">DAILY BRIEFING</div>
+        <div class="date-header-big">
+          {% set sd = solar_date | default("", true) %}
+          {% if sd %}
+            {% set parts = sd.split("-") %}
+            {% if parts | length == 3 %}{{ parts[0] }}年{{ parts[1] | int }}月{{ parts[2] | int }}日{% else %}{{ sd }}{% endif %}
+          {% else %}
+            日期未设置
+          {% endif %}
+          {% set wd = weekday | default(fortune.weekday if fortune else "", true) %}
+          {% if wd %}<span class="weekday">{{ wd }}</span>{% endif %}
+        </div>
+      </div>
+      <div class="date-header-sub">
+        {% set fa = fetched_at | default("", true) %}
+        {% if fa | length > 11 %}更新于 {{ fa[11:19] }}{% elif fa %}更新于 {{ fa }}{% else %}等待首次更新{% endif %}
+      </div>
     </div>
 
     {# Fortune + Weather row #}
@@ -458,7 +128,7 @@
     {# Daily summary #}
     <div class="card">
       {% if daily_summary %}
-        <div class="summary-heading">今日重点</div>
+        <div class="summary-heading"><span>今日重点</span><small>编辑摘要</small></div>
         <div class="summary-text">{{ daily_summary }}</div>
       {% elif headlines_only_mode %}
         <div class="summary-notice">
@@ -475,6 +145,13 @@
   {# Tab 2 — News (articles by domain)         #}
   {# ══════════════════════════════════════════ #}
   <div id="tab-news" class="tab-pane">
+    <div class="page-intro compact">
+      <div>
+        <div class="eyebrow">NEWSROOM</div>
+        <div class="date-header-big">今日新闻</div>
+      </div>
+      <div class="date-header-sub">按来源整理</div>
+    </div>
     {% for domain in domain_order %}
       {% set articles = articles_by_domain.get(domain, []) %}
       {% if articles %}
@@ -508,6 +185,13 @@
   {# Tab 3 — Agent Chat                        #}
   {# ══════════════════════════════════════════ #}
   <div id="tab-chat" class="tab-pane">
+    <div class="page-intro compact chat-heading">
+      <div>
+        <div class="eyebrow">NEWS AGENT</div>
+        <div class="date-header-big">继续追问</div>
+      </div>
+      <div class="date-header-sub">基于本地新闻上下文</div>
+    </div>
     <div id="chat-list" class="chat-list"></div>
     <div id="chat-bar" class="chat-bar">
       <textarea id="chat-input" rows="3" placeholder="问点什么..." maxlength="500"></textarea>
@@ -520,6 +204,14 @@
   {# Tab 4 — Config (Skills & MCP Servers)     #}
   {# ══════════════════════════════════════════ #}
   <div id="tab-config" class="tab-pane">
+
+    <div class="page-intro compact">
+      <div>
+        <div class="eyebrow">PREFERENCES</div>
+        <div class="date-header-big">能力与连接</div>
+      </div>
+      <div class="date-header-sub">配置保存在本机</div>
+    </div>
 
     {# Skills card #}
     <div class="card">
@@ -556,10 +248,6 @@
 
 </div>
 
-{# ── Footer ── #}
-<div class="footer">
-  由 news-agent 整理 · 数据源 RSSHub / 原始 RSS / Bangumi / 本地黄历 · 仅供个人学习研究
-</div>
 
 <div id="toast" class="toast"></div>
 
