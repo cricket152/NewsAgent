@@ -24,7 +24,7 @@ from PyInstaller.utils.hooks import collect_all
 # ---------------------------------------------------------------------------
 # Project paths  (relative to this spec file's location)
 # ---------------------------------------------------------------------------
-SPEC_DIR = Path(__file__).parent.resolve()
+SPEC_DIR = Path(SPECPATH).resolve()
 SRC_DIR = SPEC_DIR / "src"
 
 # Entry-point scripts (absolute)
@@ -34,7 +34,9 @@ ENTRY_WORKER = SRC_DIR / "news_agent" / "worker.py"
 # Data files
 TEMPLATE_DAILY = SRC_DIR / "news_agent" / "templates" / "daily.html"
 TEMPLATE_DAILY_STYLE = SRC_DIR / "news_agent" / "templates" / "daily.css"
+APP_ICON_PNG = SRC_DIR / "news_agent" / "img" / "3f0656e1a4a1ead747d08882af20a2da.png"
 CONFIG_EXAMPLE = SPEC_DIR / "config.yaml.example"
+ENV_EXAMPLE = SPEC_DIR / ".env.example"
 
 # Executable names (displayed in Task Manager / Explorer)
 NAME_MAIN = "NewsAgent"
@@ -128,9 +130,19 @@ if TEMPLATE_DAILY_STYLE.exists():
         (str(TEMPLATE_DAILY_STYLE), "news_agent/templates")
     )
 
+if APP_ICON_PNG.exists():
+    datas_shared.append(
+        (str(APP_ICON_PNG), "news_agent/img")
+    )
+
 if CONFIG_EXAMPLE.exists():
     datas_shared.append(
         (str(CONFIG_EXAMPLE), ".")
+    )
+
+if ENV_EXAMPLE.exists():
+    datas_shared.append(
+        (str(ENV_EXAMPLE), ".")
     )
 
 # ---------------------------------------------------------------------------
@@ -158,6 +170,7 @@ exe_main = EXE(
     strip=False,
     upx=True,
     console=False,
+    icon=str(APP_ICON_PNG),
     disable_windowed_traceback=False,
 )
 
@@ -184,6 +197,7 @@ exe_worker = EXE(
     strip=False,
     upx=True,
     console=False,
+    icon=str(APP_ICON_PNG),
     disable_windowed_traceback=False,
 )
 

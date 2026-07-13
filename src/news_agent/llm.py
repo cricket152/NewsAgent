@@ -19,6 +19,7 @@ Key behaviours:
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -36,7 +37,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from news_agent.api_key import get_api_key
+from news_agent.api_key import get_api_key, load_env_files
 from news_agent.db import (
     add_token_usage,
     get_read_only_connection,
@@ -61,8 +62,23 @@ def _get_api_key() -> str:
     """Return the DeepSeek API key, or raise ``RuntimeError`` if not configured."""
     key = get_api_key()
     if not key:
-        raise RuntimeError("DeepSeek API key not configured")
+        raise RuntimeError("OpenAI-compatible API key not configured")
     return key
+
+
+def _get_provider_settings() -> tuple[str, str]:
+    """Return ``(base_url, model)`` from ``.env`` with legacy defaults."""
+    load_env_files()
+    base_url = os.environ.get("OPENAI_BASE_URL", BASE_URL).strip() or BASE_URL
+    model = os.environ.get("OPENAI_MODEL", MODEL_NAME).strip() or MODEL_NAME
+    return base_url.rstrip("/"), model
+
+
+def _provider_kwargs(base_url: str) -> dict:
+    """Return provider-specific options without breaking Grok/OpenAI APIs."""
+    if "deepseek.com" in base_url.lower():
+        return {"extra_body": {"thinking": {"type": "disabled"}}}
+    return {}
 
 
 # Tenacity retry decorator — applied to inner API-call functions so that
@@ -105,7 +121,8 @@ def chat(
             daily ceiling.
     """
     api_key = _get_api_key()
-    client = OpenAI(api_key=api_key, base_url=BASE_URL)
+    base_url, model = _get_provider_settings()
+    client = OpenAI(api_key=api_key, base_url=base_url)
 
     # ── cost ceiling guard ───────────────────────────────────────────
     if db_path is not None:
@@ -126,12 +143,12 @@ def chat(
     @_RETRY_DECORATOR
     def _call() -> str:
         response = client.chat.completions.create(
-            model=MODEL_NAME,
+            model=model,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
             timeout=DEFAULT_TIMEOUT,
-            extra_body={"thinking": {"type": "disabled"}},
+            **_provider_kwargs(base_url),
         )
         content = response.choices[0].message.content or ""
         tokens = response.usage.total_tokens if response.usage else 0
@@ -174,7 +191,8 @@ def stream_chat(
             daily ceiling.
     """
     api_key = _get_api_key()
-    client = OpenAI(api_key=api_key, base_url=BASE_URL)
+    base_url, model = _get_provider_settings()
+    client = OpenAI(api_key=api_key, base_url=base_url)
 
     if db_path is not None:
         ro_conn = get_read_only_connection(db_path)
@@ -193,13 +211,13 @@ def stream_chat(
     @_RETRY_DECORATOR
     def _create_stream():
         return client.chat.completions.create(
-            model=MODEL_NAME,
+            model=model,
             messages=messages,
             temperature=temperature,
             timeout=DEFAULT_TIMEOUT,
             stream=True,
             stream_options={"include_usage": True},
-            extra_body={"thinking": {"type": "disabled"}},
+            **_provider_kwargs(base_url),
         )
 
     stream = _create_stream()

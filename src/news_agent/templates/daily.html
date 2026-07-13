@@ -80,6 +80,10 @@
           {% if wd %}<span class="weekday">{{ wd }}</span>{% endif %}
         </div>
       </div>
+      <div class="page-actions">
+        <button id="refresh-news" class="btn btn-refresh" type="button" onclick="onRefreshNews()">刷新</button>
+        <span id="refresh-status" class="refresh-status" aria-live="polite"></span>
+      </div>
       <div class="date-header-sub">
         {% set fa = fetched_at | default("", true) %}
         {% if fa | length > 11 %}更新于 {{ fa[11:19] }}{% elif fa %}更新于 {{ fa }}{% else %}等待首次更新{% endif %}
@@ -213,6 +217,21 @@
       <div class="date-header-sub">配置保存在本机</div>
     </div>
 
+    {# Application card #}
+    <div class="card">
+      <div class="cfg-heading">应用设置</div>
+      <div class="setting-row">
+        <div>
+          <div class="setting-name">开机启动</div>
+          <div class="muted">登录 Windows 后自动运行 NewsAgent</div>
+        </div>
+        <label class="toggle-switch">
+          <input id="autostart-toggle" type="checkbox" onchange="onAutostartToggle(this.checked)">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
     {# Skills card #}
     <div class="card">
       <div class="cfg-heading">Skills 技能</div>
@@ -265,7 +284,7 @@ function showTab(tabId) {
     ensureWebViewReady(loadHistory);
   }
   if (tabId === 'tab-config') {
-    ensureWebViewReady(function() { loadSkills(); loadMcpServers(); });
+    ensureWebViewReady(function() { loadAutostartStatus(); loadSkills(); loadMcpServers(); });
   }
 }
 
@@ -449,6 +468,40 @@ function loadHistory() {
    ═══════════════════════════════════════════ */
 window.__mcp_servers = [];
 
+function loadAutostartStatus() {
+  var toggle = document.getElementById('autostart-toggle');
+  if (!toggle) return;
+  toggle.disabled = true;
+  window.pywebview.api.get_autostart_status().then(function(result) {
+    toggle.checked = !!(result && result.enabled);
+    toggle.disabled = false;
+  }).catch(function(err) {
+    toggle.disabled = false;
+    showToast('读取开机启动状态失败: ' + err);
+  });
+}
+
+function onAutostartToggle(enabled) {
+  var toggle = document.getElementById('autostart-toggle');
+  if (toggle) toggle.disabled = true;
+  window.pywebview.api.set_autostart(enabled).then(function(result) {
+    var actual = !!(result && result.enabled);
+    if (toggle) {
+      toggle.checked = actual;
+      toggle.disabled = false;
+    }
+    if (!(result && result.success)) {
+      showToast('开机启动设置失败');
+    }
+  }).catch(function(err) {
+    if (toggle) {
+      toggle.checked = !enabled;
+      toggle.disabled = false;
+    }
+    showToast('开机启动设置失败: ' + err);
+  });
+}
+
 function loadSkills() {
   var list = document.getElementById('skills-list');
   if (!list) return;
@@ -593,6 +646,50 @@ function showToast(msg) {
   el.classList.add('show');
   clearTimeout(window.__toast_timer);
   window.__toast_timer = setTimeout(function() { el.classList.remove('show'); }, 2500);
+}
+
+function onRefreshNews() {
+  var button = document.getElementById('refresh-news');
+  var status = document.getElementById('refresh-status');
+  if (!button || !status || button.disabled) return;
+  button.disabled = true;
+  button.textContent = '刷新中…';
+  status.textContent = '正在检索新闻并生成概要…';
+
+  ensureWebViewReady(function() {
+    window.pywebview.api.refresh_news().then(function(result) {
+      if (!result || result.status === 'failed') {
+        button.disabled = false;
+        button.textContent = '刷新';
+        status.textContent = (result && result.message) || '刷新任务未启动';
+        return;
+      }
+      pollRefreshStatus(button, status);
+    }).catch(function() {
+      button.disabled = false;
+      button.textContent = '刷新';
+      status.textContent = '刷新任务未启动';
+    });
+  });
+}
+
+function pollRefreshStatus(button, status) {
+  window.pywebview.api.get_refresh_status().then(function(result) {
+    var state = (result && result.status) || 'failed';
+    status.textContent = (result && result.message) || '';
+    if (state === 'running') {
+      window.setTimeout(function() { pollRefreshStatus(button, status); }, 1200);
+      return;
+    }
+    if (state === 'failed') {
+      button.disabled = false;
+      button.textContent = '刷新';
+    }
+  }).catch(function() {
+    button.disabled = false;
+    button.textContent = '刷新';
+    status.textContent = '无法获取刷新状态';
+  });
 }
 
 /* ═══════════════════════════════════════════

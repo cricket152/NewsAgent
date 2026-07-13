@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Callable
 
 import pystray
@@ -19,6 +20,7 @@ logger = get_logger()
 APP_NAME = "NewsAgent"
 DEFAULT_BG_COLOR = "#2d8a3c"
 ICON_SIZE = 64
+APP_ICON_PATH = Path(__file__).parent / "img" / "3f0656e1a4a1ead747d08882af20a2da.png"
 
 
 # ---------------------------------------------------------------------------
@@ -38,6 +40,18 @@ def _make_default_icon() -> Image.Image:
     y = (ICON_SIZE - text_h) // 2
     draw.text((x, y), text, fill="white")
     return img
+
+
+def load_app_icon() -> Image.Image:
+    """Load the branded application icon, falling back to the generated icon."""
+    try:
+        with Image.open(APP_ICON_PATH) as source:
+            return source.convert("RGBA").resize(
+                (ICON_SIZE, ICON_SIZE), Image.Resampling.LANCZOS
+            )
+    except (OSError, ValueError):
+        logger.warning("Could not load application icon: %s", APP_ICON_PATH, exc_info=True)
+        return _make_default_icon()
 
 
 def _build_menu(

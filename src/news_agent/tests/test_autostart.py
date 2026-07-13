@@ -2,15 +2,26 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-from news_agent.autostart import disable_autostart, enable_autostart, is_autostart_enabled
+from news_agent.autostart import (
+    _build_command,
+    disable_autostart,
+    enable_autostart,
+    is_autostart_enabled,
+)
+from news_agent.chat_bridge import ChatBridge
 
 RUN_KEY = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
 VALUE_NAME = "NewsAgent"
 
 
 class TestAutostartEnable:
+    def test_frozen_command_targets_executable_directly(self) -> None:
+        command = _build_command(Path(r"C:\Program Files\NewsAgent\NewsAgent.exe"))
+        assert command == '"C:\\Program Files\\NewsAgent\\NewsAgent.exe" --autostart'
+
     def test_enable_autostart_writes_registry(self, mock_winreg: MagicMock) -> None:
         """enable_autostart calls winreg.CreateKeyEx + SetValueEx."""
         result = enable_autostart()
@@ -48,3 +59,25 @@ class TestAutostartDisable:
         mock_winreg.QueryValueEx.side_effect = FileNotFoundError()
         enabled = is_autostart_enabled()
         assert enabled is False
+
+
+class TestAutostartBridge:
+    def test_get_status(self) -> None:
+        with patch("news_agent.autostart.is_autostart_enabled", return_value=True):
+            assert ChatBridge().get_autostart_status() == {"enabled": True}
+
+    def test_enable(self) -> None:
+        with (
+            patch("news_agent.autostart.enable_autostart", return_value=True),
+            patch("news_agent.autostart.is_autostart_enabled", return_value=True),
+        ):
+            result = ChatBridge().set_autostart(True)
+        assert result == {"success": True, "enabled": True}
+
+    def test_disable(self) -> None:
+        with (
+            patch("news_agent.autostart.disable_autostart", return_value=True),
+            patch("news_agent.autostart.is_autostart_enabled", return_value=False),
+        ):
+            result = ChatBridge().set_autostart(False)
+        assert result == {"success": True, "enabled": False}

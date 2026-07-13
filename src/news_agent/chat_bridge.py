@@ -16,7 +16,11 @@ JS contract:
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
+import threading
 from pathlib import Path
+from typing import Callable
 
 from news_agent.agent.conversation import (
     clear_history as _clear_history,
@@ -33,6 +37,78 @@ from news_agent.logging_setup import get_logger
 logger = get_logger()
 
 
+class _NewsRefreshRunner:
+    """Run the worker in a separate process and expose its current state."""
+
+    def __init__(self, on_success: Callable[[], None] | None = None) -> None:
+        self._lock = threading.Lock()
+        self._process: subprocess.Popen | None = None
+        self._status = "idle"
+        self._message = ""
+        self._on_success = on_success
+
+    def set_on_success(self, callback: Callable[[], None]) -> None:
+        self._on_success = callback
+
+    def start(self) -> dict:
+        with self._lock:
+            if self._process is not None and self._process.poll() is None:
+                return {"started": False, "status": "running", "message": "刷新任务正在进行中"}
+
+            command = self._worker_command()
+            flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            try:
+                self._process = subprocess.Popen(
+                    command,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=flags,
+                )
+            except OSError as exc:
+                self._status = "failed"
+                self._message = str(exc)
+                logger.warning("Could not start refresh worker", exc_info=True)
+                return {"started": False, "status": "failed", "message": "无法启动刷新任务"}
+
+            self._status = "running"
+            self._message = "正在检索新闻并生成概要…"
+            threading.Thread(target=self._watch, daemon=True, name="news-refresh-watch").start()
+            return {"started": True, "status": self._status, "message": self._message}
+
+    def status(self) -> dict:
+        with self._lock:
+            return {"status": self._status, "message": self._message}
+
+    @staticmethod
+    def _worker_command() -> list[str]:
+        if getattr(sys, "frozen", False):
+            worker = Path(sys.executable).with_name("NewsAgentWorker.exe")
+            if worker.is_file():
+                return [str(worker)]
+        return [sys.executable, "-m", "news_agent.worker"]
+
+    def _watch(self) -> None:
+        process = self._process
+        if process is None:
+            return
+        return_code = process.wait()
+        callback: Callable[[], None] | None = None
+        with self._lock:
+            if return_code == 0:
+                self._status = "completed"
+                self._message = "刷新完成"
+                callback = self._on_success
+            else:
+                self._status = "failed"
+                self._message = "刷新失败，请查看日志"
+
+        if callback is not None:
+            try:
+                callback()
+            except Exception:
+                logger.warning("Could not reload viewer after refresh", exc_info=True)
+
+
 class ChatBridge:
     """Exposes a stable JSON-friendly surface to the webview JS side.
 
@@ -46,6 +122,44 @@ class ChatBridge:
         # If caller (viewer.create_window) passes a concrete path, use it.
         # Else, conversation.py's internal _resolve_db() handles the default.
         self._db_path = db_path
+        self._refresh_runner = _NewsRefreshRunner()
+
+    def set_refresh_callback(self, callback: Callable[[], None]) -> None:
+        """Set the view reload callback run after a successful refresh."""
+        self._refresh_runner.set_on_success(callback)
+
+    def refresh_news(self) -> dict:
+        """Start a background worker run for news retrieval and AI summaries."""
+        return self._refresh_runner.start()
+
+    def get_refresh_status(self) -> dict:
+        """Return current manual-refresh state for the home-page button."""
+        return self._refresh_runner.status()
+
+    def get_autostart_status(self) -> dict:
+        """Return whether NewsAgent starts automatically after sign-in."""
+        try:
+            from news_agent.autostart import is_autostart_enabled
+
+            return {"enabled": is_autostart_enabled()}
+        except Exception as exc:
+            logger.warning("get_autostart_status failed", exc_info=True)
+            return {"enabled": False, "error": str(exc)}
+
+    def set_autostart(self, enabled: bool) -> dict:
+        """Enable or disable Windows sign-in startup and return actual state."""
+        try:
+            from news_agent.autostart import (
+                disable_autostart,
+                enable_autostart,
+                is_autostart_enabled,
+            )
+
+            success = enable_autostart() if enabled else disable_autostart()
+            return {"success": success, "enabled": is_autostart_enabled()}
+        except Exception as exc:
+            logger.warning("set_autostart(%s) failed", enabled, exc_info=True)
+            return {"success": False, "enabled": not enabled, "error": str(exc)}
 
     # -- public JS API surface (names fixed by daily.html contract) --
 

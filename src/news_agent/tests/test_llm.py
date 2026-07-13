@@ -17,6 +17,7 @@ from news_agent.llm import (
     DAILY_TOKEN_CEILING,
     DEFAULT_TIMEOUT,
     MAX_RETRIES,
+    BASE_URL,
     MODEL_NAME,
     CostCeilingExceeded,
     chat,
@@ -60,6 +61,24 @@ class TestChatErrors:
 
 
 class TestChatSuccess:
+    def test_chat_uses_openai_compatible_env(self, mock_openai_client: MagicMock) -> None:
+        env = {
+            "OPENAI_BASE_URL": "https://api.x.ai/v1",
+            "OPENAI_MODEL": "grok-test",
+        }
+        with (
+            patch.dict("os.environ", env, clear=False),
+            patch("news_agent.llm.get_api_key", return_value="fake-key"),
+        ):
+            chat([{"role": "system", "content": "sys"}, {"role": "user", "content": "hi"}])
+
+        mock_openai_client.assert_called_once_with(
+            api_key="fake-key", base_url="https://api.x.ai/v1"
+        )
+        _, kwargs = mock_openai_client.return_value.chat.completions.create.call_args
+        assert kwargs["model"] == "grok-test"
+        assert "extra_body" not in kwargs
+
     def test_chat_records_usage(self, tmp_db_path: Path, mock_openai_client: MagicMock) -> None:
         init_db(tmp_db_path)
         with patch("news_agent.llm.get_api_key", return_value="fake-key"):
@@ -86,7 +105,10 @@ class TestChatSuccess:
 
     def test_chat_includes_thinking_disabled(self, mock_openai_client: MagicMock) -> None:
         """Verify extra_body includes thinking disabled."""
-        with patch("news_agent.llm.get_api_key", return_value="fake-key"):
+        with (
+            patch.dict("os.environ", {"OPENAI_BASE_URL": BASE_URL}),
+            patch("news_agent.llm.get_api_key", return_value="fake-key"),
+        ):
             chat([{"role": "system", "content": "sys"}, {"role": "user", "content": "hi"}])
         create_mock = mock_openai_client.return_value.chat.completions.create
         create_mock.assert_called_once()

@@ -176,6 +176,7 @@ def main(argv: list[str] | None = None) -> int:
     # ── 7. Build tray callbacks (closures over icon, cfg, listener) ───────
     icon: ctypes.c_void_p | None = None  # type: ignore[assignment]
     listener: object | None = None  # pynput GlobalHotKeys listener
+    shutdown_requested = threading.Event()
 
     def on_show() -> None:
         """Handle tray "今日播报" / left-click — show (or create) the viewer."""
@@ -185,8 +186,15 @@ def main(argv: list[str] | None = None) -> int:
             logger.warning("Failed to show window via tray", exc_info=True)
 
     def on_settings() -> None:
-        """Handle tray "设置" menu item (no-op stub for MVP)."""
-        logger.info("Settings menu clicked (TBD)")
+        """Show the viewer and switch directly to the configuration tab."""
+        try:
+            viewer.show_window()
+            settings_window = viewer.get_window()
+            if settings_window is not None:
+                settings_window.evaluate_js("showTab('tab-config')")
+            logger.info("Settings tab opened")
+        except Exception:
+            logger.warning("Failed to open settings tab", exc_info=True)
 
     def on_quit() -> None:
         """Handle tray "退出" menu item — save state, destroy window, stop tray.
@@ -196,6 +204,7 @@ def main(argv: list[str] | None = None) -> int:
         return on the main thread, which then performs final cleanup.
         """
         logger.info("Shutting down via tray menu …")
+        shutdown_requested.set()
         nonlocal_listener = listener  # Capture current value
 
         # 7a. Save window position to config ----------------------------------
@@ -236,6 +245,7 @@ def main(argv: list[str] | None = None) -> int:
         on_show=on_show,
         on_quit=on_quit,
         on_settings=on_settings,
+        icon_image=tray.load_app_icon(),
     )
     tray_thread = threading.Thread(
         target=tray.run_tray,
@@ -256,6 +266,9 @@ def main(argv: list[str] | None = None) -> int:
 
         def _on_closing() -> bool:
             """Prevent window destruction on X-click; hide instead."""
+            if shutdown_requested.is_set():
+                logger.debug("Window close allowed during application shutdown")
+                return True
             logger.debug("Window closing intercepted → hiding")
             viewer.hide_window(win)
             return False  # False = cancel the close / prevent destruction
@@ -276,9 +289,11 @@ def main(argv: list[str] | None = None) -> int:
         logger.warning("Failed to register global hotkey", exc_info=True)
 
     # ── 12. Autostart popup-at-boot ───────────────────────────────────────
-    if args.autostart:
-        viewer.show_window()
-        logger.info("Showing daily window (--autostart mode)")
+    def _show_after_webview_start() -> None:
+        """Show the window only after the WebView GUI loop is ready."""
+        if args.autostart:
+            viewer.show_window()
+            logger.info("Showing daily window (--autostart mode)")
 
     # ── 13. Enter webview GUI event loop (BLOCKS until all windows destroyed)
     #
@@ -286,13 +301,16 @@ def main(argv: list[str] | None = None) -> int:
     # to bridge the WebView2 cold-start delay.  Skipped for now — the delay
     # is acceptable and splash adds complexity without user-facing value.
     logger.info("Entering webview event loop")
-    webview.start()
+    webview.start(_show_after_webview_start)
 
     # ── 14. Post-event-loop cleanup (window destroyed by on_quit) ─────────
     # Listener and tray are already stopped by on_quit; guard double-stop.
     if listener is not None:
         try:
             listener.stop()
+            join = getattr(listener, "join", None)
+            if callable(join):
+                join(timeout=2)
         except Exception:
             logger.debug("Listener already stopped (expected)")
 
@@ -301,6 +319,9 @@ def main(argv: list[str] | None = None) -> int:
             tray.stop_tray(icon)
         except Exception:
             logger.debug("Tray already stopped (expected)")
+
+    if tray_thread.is_alive():
+        tray_thread.join(timeout=2)
 
     logger.info("Shutdown complete")
     return 0

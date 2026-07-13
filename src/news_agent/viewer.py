@@ -81,6 +81,14 @@ def _get_chat_bridge(db_path: Path | None = None) -> ChatBridge:
     return _chat_bridge
 
 
+def refresh_window() -> None:
+    """Render the latest worker bundle into the already-open viewer window."""
+    window = get_window()
+    if window is None:
+        return
+    window.load_html(render_html(load_bundle()))
+
+
 def _apply_light_title_bar(window: webview.Window) -> None:
     """Force a white Windows title bar with dark caption text.
 
@@ -188,6 +196,7 @@ def create_window(
 
     # --- JS API bridge for chat tab ---
     bridge = _get_chat_bridge(db_path=db_path)
+    bridge.set_refresh_callback(refresh_window)
 
     # --- Resolve window geometry ---
     width = DEFAULT_WIDTH

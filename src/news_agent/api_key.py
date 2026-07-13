@@ -12,15 +12,17 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from pathlib import Path
 
 import keyring
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 KEYRING_SERVICE = "news-agent"
 KEYRING_USERNAME = "deepseek_api_key"
 ENV_FILE_NAME = ".env"
-ENV_KEY_NAME = "DEEPSEEK_API_KEY"
+ENV_KEY_NAME = "OPENAI_API_KEY"
+LEGACY_ENV_KEY_NAME = "DEEPSEEK_API_KEY"
 
 _logger = logging.getLogger("news_agent")
 
@@ -31,6 +33,22 @@ def _env_file_path() -> Path:
     return Path(base) / "news-agent" / ENV_FILE_NAME
 
 
+def load_env_files() -> None:
+    """Load OpenAI-compatible settings from project and user ``.env`` files."""
+    app_dir = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path.cwd()
+    candidates = [Path.cwd() / ENV_FILE_NAME, app_dir / ENV_FILE_NAME, _env_file_path()]
+    seen: set[Path] = set()
+    for path in candidates:
+        resolved = path.resolve()
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        if path.is_file():
+            for name, value in dotenv_values(path).items():
+                if value and not os.environ.get(name):
+                    os.environ[name] = value
+
+
 def get_api_key() -> str | None:
     """Retrieve the DeepSeek API key, trying keyring first then .env fallback.
 
@@ -38,7 +56,14 @@ def get_api_key() -> str | None:
         The API key string if found and non-empty, ``None`` if no key is
         configured.  Callers decide how to handle the missing-key case.
     """
-    # 1. Try Windows Credential Manager via keyring
+    # 1. Prefer the standard OpenAI-compatible environment variable.
+    load_env_files()
+    env_key = os.environ.get(ENV_KEY_NAME)
+    if env_key and env_key.strip():
+        _logger.debug("API key loaded from OPENAI_API_KEY")
+        return env_key.strip()
+
+    # 2. Try Windows Credential Manager via keyring (legacy installations).
     try:
         key = keyring.get_password(KEYRING_SERVICE, KEYRING_USERNAME)
         if key and key.strip():
@@ -47,14 +72,11 @@ def get_api_key() -> str | None:
     except Exception:
         _logger.debug("keyring lookup failed, falling back to .env", exc_info=True)
 
-    # 2. Try .env fallback
-    env_path = _env_file_path()
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path)
-        key = os.environ.get(ENV_KEY_NAME)
-        if key and key.strip():
-            _logger.debug("API key loaded from .env fallback")
-            return key.strip()
+    # 3. Support the previous DeepSeek-specific variable name.
+    legacy_key = os.environ.get(LEGACY_ENV_KEY_NAME)
+    if legacy_key and legacy_key.strip():
+        _logger.debug("API key loaded from legacy DEEPSEEK_API_KEY")
+        return legacy_key.strip()
 
     _logger.debug("No API key found (checked keyring and .env)")
     return None

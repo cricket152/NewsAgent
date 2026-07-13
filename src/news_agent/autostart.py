@@ -55,12 +55,14 @@ def _resolve_main_py() -> Path:
     return (Path(__file__).parent / "main.py").resolve()
 
 
-def _build_command(pythonw: Path, main_py: Path) -> str:
+def _build_command(pythonw: Path, main_py: Path | None = None) -> str:
     """Build the Run-key value string: ``"<pythonw>" "<main.py>" --autostart``.
 
     Paths are always wrapped in double-quotes for safety, even when they
     contain no spaces.
     """
+    if main_py is None:
+        return f'"{pythonw}" --autostart'
     return f'"{pythonw}" "{main_py}" --autostart'
 
 
@@ -78,7 +80,7 @@ def enable_autostart() -> bool:
     """
     try:
         pythonw = _resolve_pythonw()
-        main_py = _resolve_main_py()
+        main_py = None if getattr(sys, "frozen", False) else _resolve_main_py()
         command = _build_command(pythonw, main_py)
 
         # 1. Set the Run key value ------------------------------------------
