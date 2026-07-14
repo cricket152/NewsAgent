@@ -86,7 +86,7 @@
       </div>
       <div class="date-header-sub">
         {% set fa = fetched_at | default("", true) %}
-        {% if fa | length > 11 %}更新于 {{ fa[11:19] }}{% elif fa %}更新于 {{ fa }}{% else %}等待首次更新{% endif %}
+        {% if fa %}更新于 {{ fa | local_time }}{% else %}等待首次更新{% endif %}
       </div>
     </div>
 
@@ -235,17 +235,33 @@
       </div>
     </div>
 
+    {# System prompt card #}
+    <div class="card">
+      <div class="cfg-heading">系统提示词</div>
+      <div class="muted cfg-desc">作为 03 对话 Agent 的基础指令；留空时不添加基础提示词。</div>
+      <textarea id="system-prompt-input" class="system-prompt-input" rows="6" maxlength="50000" placeholder="输入系统提示词（可留空）"></textarea>
+      <div class="system-prompt-actions">
+        <span id="system-prompt-status" class="muted"></span>
+        <button class="btn" type="button" onclick="saveSystemPrompt()">保存</button>
+      </div>
+    </div>
+
     {# Skills card #}
     <div class="card">
       <div class="cfg-heading">Skills 技能</div>
       <div class="muted cfg-desc">勾选启用的技能，将作为系统提示词前置内容发送给 AI.</div>
+      <div class="skill-import-bar">
+        <input id="skill-file-input" type="file" accept=".md,text/markdown,text/plain" onchange="onSkillFileSelected(this)">
+        <label class="btn skill-import-button" for="skill-file-input">导入 Markdown</label>
+        <span id="skill-import-status" class="muted">选择一个 .md 技能文件</span>
+      </div>
       <div id="skills-list"></div>
     </div>
 
     {# MCP Servers card #}
     <div class="card">
       <div class="cfg-heading">MCP 服务</div>
-      <div class="muted cfg-desc">持久化 MCP 服务器配置（暂不实际运行）。</div>
+      <div class="muted cfg-desc">保存 MCP 服务配置，并可执行标准 initialize 连接测试。</div>
       <div id="mcp-list"></div>
       <button class="btn" onclick="showMcpForm()" style="margin-top: 12px;">添加 MCP 服务</button>
       <div id="mcp-form" class="mcp-form" style="display:none;">
@@ -272,6 +288,9 @@
 
 
 <div id="toast" class="toast"></div>
+<div id="conversation-context-menu" class="conversation-context-menu" role="menu">
+  <button type="button" role="menuitem" onclick="deleteContextConversation()">删除对话</button>
+</div>
 
 <script>
 /* ═══════════════════════════════════════════
@@ -287,7 +306,7 @@ function showTab(tabId) {
     ensureWebViewReady(function() { loadConversations(); loadHistory(); });
   }
   if (tabId === 'tab-config') {
-    ensureWebViewReady(function() { loadAutostartStatus(); loadSkills(); loadMcpServers(); });
+    ensureWebViewReady(function() { loadAutostartStatus(); loadSystemPrompt(); loadSkills(); loadMcpServers(); });
   }
 }
 
@@ -505,6 +524,33 @@ function onAutostartToggle(enabled) {
   });
 }
 
+function loadSystemPrompt() {
+  var input = document.getElementById('system-prompt-input');
+  if (!input) return;
+  window.pywebview.api.get_agent_config().then(function(config) {
+    input.value = (config && config.system_prompt) || '';
+  }).catch(function(err) {
+    document.getElementById('system-prompt-status').textContent = '加载失败: ' + err;
+  });
+}
+
+function saveSystemPrompt() {
+  var input = document.getElementById('system-prompt-input');
+  var status = document.getElementById('system-prompt-status');
+  if (!input) return;
+  if (status) status.textContent = '保存中…';
+  window.pywebview.api.save_system_prompt(input.value).then(function(result) {
+    if (!result || !result.saved) {
+      if (status) status.textContent = (result && result.error) || '保存失败';
+      return;
+    }
+    if (status) status.textContent = input.value.trim() ? '已保存' : '已清空';
+    showToast('系统提示词已保存');
+  }).catch(function(err) {
+    if (status) status.textContent = '保存失败: ' + err;
+  });
+}
+
 function loadSkills() {
   var list = document.getElementById('skills-list');
   if (!list) return;
@@ -526,11 +572,14 @@ function loadSkills() {
       row.className = 'skill-row';
       var checked = enabled[skill.name] ? ' checked' : '';
       var safeName = (skill.name || '').replace(/'/g, "\\'");
-      row.innerHTML = '<div><div style="font-weight:600;">' + escapeHtml(skill.name) + '</div>'
+      var displayName = skill.display_name || skill.name;
+      var deleteButton = skill.builtin ? '' : '<button class="skill-delete-button" type="button" title="删除 Skill" onclick="deleteImportedSkill(\'' + safeName + '\')">删除</button>';
+      row.innerHTML = '<div class="skill-info"><div style="font-weight:600;">' + escapeHtml(displayName) + '</div>'
         + '<div class="muted">' + escapeHtml(skill.description || '') + '</div></div>'
+        + '<div class="skill-actions">' + deleteButton
         + '<label class="toggle-switch"><input type="checkbox"' + checked
         + ' onchange="onSkillToggle(\'' + safeName + '\', this.checked)">'
-        + '<span class="slider"></span></label>';
+        + '<span class="slider"></span></label></div>';
       list.appendChild(row);
     });
   }).catch(function(err) {
@@ -544,6 +593,48 @@ function onSkillToggle(name, enabled) {
   }).catch(function(err) {
     showToast('操作失败: ' + err);
   });
+}
+
+function onSkillFileSelected(input) {
+  var file = input.files && input.files[0];
+  var status = document.getElementById('skill-import-status');
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith('.md')) {
+    if (status) status.textContent = '仅支持 .md 文件';
+    input.value = '';
+    return;
+  }
+  if (file.size > 512 * 1024) {
+    if (status) status.textContent = '文件不能超过 512 KB';
+    input.value = '';
+    return;
+  }
+  if (status) status.textContent = '正在导入 ' + file.name + '…';
+  file.text().then(function(content) {
+    return window.pywebview.api.import_skill(file.name, content);
+  }).then(function(result) {
+    if (!result || result.error) {
+      if (status) status.textContent = (result && result.error) || '导入失败';
+      return;
+    }
+    if (status) status.textContent = result.name + ' 已导入并启用';
+    loadSkills();
+    showToast('Skill 已导入');
+  }).catch(function(err) {
+    if (status) status.textContent = '导入失败: ' + err;
+  }).finally(function() { input.value = ''; });
+}
+
+function deleteImportedSkill(name) {
+  if (!window.confirm('确定删除这个 Skill 吗？')) return;
+  window.pywebview.api.delete_skill(name).then(function(result) {
+    if (!result || !result.deleted) {
+      showToast((result && result.error) || '删除 Skill 失败');
+      return;
+    }
+    loadSkills();
+    showToast('Skill 已删除');
+  }).catch(function(err) { showToast('删除 Skill 失败: ' + err); });
 }
 
 function loadMcpServers() {
@@ -570,6 +661,7 @@ function loadMcpServers() {
         + '<div><span class="name">' + escapeHtml(srv.name) + '</span> ' + badge + '</div>'
         + '<div class="cmd">' + escapeHtml(cmdText) + '</div></div>'
         + '<div class="btn-row" style="margin-top:0;">'
+        + '<button class="btn btn-secondary" onclick="onTestMcpServer(' + idx + ', this)">测试</button>'
         + '<button class="btn" onclick="onEditMcpServer(' + idx + ')">编辑</button>'
         + '<button class="btn btn-danger" onclick="onDeleteMcpServer(\'' + safeName + '\')">删除</button>'
         + '</div>';
@@ -577,6 +669,31 @@ function loadMcpServers() {
     });
   }).catch(function(err) {
     list.innerHTML = '<div class="muted">加载失败: ' + escapeHtml(String(err)) + '</div>';
+  });
+}
+
+function onTestMcpServer(idx, button) {
+  var server = window.__mcp_servers[idx];
+  if (!server || !window.pywebview || !window.pywebview.api) return;
+  var original = button.textContent;
+  button.disabled = true;
+  button.textContent = '测试中…';
+  window.pywebview.api.test_mcp_server(server).then(function(result) {
+    var ok = !!(result && result.ok);
+    button.classList.toggle('mcp-test-ok', ok);
+    button.classList.toggle('mcp-test-failed', !ok);
+    button.textContent = ok ? '可用' : '不可用';
+    showToast((result && result.message) || 'MCP 测试失败');
+  }).catch(function(err) {
+    button.classList.add('mcp-test-failed');
+    button.textContent = '不可用';
+    showToast('MCP 测试失败: ' + err);
+  }).finally(function() {
+    button.disabled = false;
+    window.setTimeout(function() {
+      button.textContent = original;
+      button.classList.remove('mcp-test-ok', 'mcp-test-failed');
+    }, 3500);
   });
 }
 
@@ -612,6 +729,7 @@ function onSaveMcpServer() {
   if (!name) { showToast('名称不能为空'); return; }
   var transport = document.getElementById('mcp-transport').value;
   var command_or_url = document.getElementById('mcp-command').value.trim();
+  if (!command_or_url) { showToast('命令或 URL 不能为空'); return; }
   var editIdx = parseInt(document.getElementById('mcp-edit-index').value, 10);
   var servers = (window.__mcp_servers || []).map(function(s) {
     return { name: s.name, transport: s.transport, command_or_url: s.command_or_url };
@@ -697,10 +815,46 @@ function loadConversations() {
       button.title = item.preview || item.title || '';
       button.textContent = item.title || '新对话';
       button.addEventListener('click', function() { selectConversation(item.id); });
+      button.addEventListener('contextmenu', function(event) {
+        event.preventDefault();
+        openConversationContextMenu(event, item);
+      });
       list.appendChild(button);
     });
   });
 }
+
+window.__contextConversation = null;
+function openConversationContextMenu(event, item) {
+  var menu = document.getElementById('conversation-context-menu');
+  if (!menu) return;
+  window.__contextConversation = item;
+  menu.style.display = 'block';
+  menu.style.left = Math.max(8, Math.min(event.clientX, window.innerWidth - menu.offsetWidth - 8)) + 'px';
+  menu.style.top = Math.max(8, Math.min(event.clientY, window.innerHeight - menu.offsetHeight - 8)) + 'px';
+}
+function closeConversationContextMenu() {
+  var menu = document.getElementById('conversation-context-menu');
+  if (menu) menu.style.display = 'none';
+  window.__contextConversation = null;
+}
+function deleteContextConversation() {
+  var item = window.__contextConversation;
+  closeConversationContextMenu();
+  if (!item || !window.pywebview || !window.pywebview.api) return;
+  if (!window.confirm('确定删除“' + (item.title || '该对话') + '”吗？此操作不可恢复。')) return;
+  window.pywebview.api.delete_conversation(item.id).then(function(result) {
+    if (!result || !result.deleted) { showToast('删除对话失败'); return; }
+    var list = document.getElementById('chat-list');
+    if (list) list.innerHTML = '';
+    window.__chat_history_loaded = false;
+    loadConversations();
+    loadHistory();
+    showToast('对话已删除');
+  }).catch(function() { showToast('删除对话失败'); });
+}
+document.addEventListener('click', closeConversationContextMenu);
+document.addEventListener('scroll', closeConversationContextMenu, true);
 
 function selectConversation(sessionId) {
   if (!window.pywebview || !window.pywebview.api) return;

@@ -22,10 +22,10 @@ import threading
 from pathlib import Path
 from typing import Callable
 
+from news_agent import db as _db
 from news_agent.agent.conversation import (
     clear_history as _clear_history,
 )
-from news_agent import db as _db
 from news_agent.agent.conversation import (
     get_history as _get_history,
 )
@@ -127,7 +127,13 @@ class ChatBridge:
         self._session_id: str | None = None
 
     def _conversation_db_path(self) -> Path:
-        return self._db_path or Path(os.environ.get("APPDATA", "")) / "news-agent" / "data" / "state.db"
+        return (
+            self._db_path
+            or Path(os.environ.get("APPDATA", ""))
+            / "news-agent"
+            / "data"
+            / "state.db"
+        )
 
     def _ensure_session(self) -> str:
         if self._session_id is not None:
@@ -281,6 +287,32 @@ class ChatBridge:
             logger.warning("select_conversation failed", exc_info=True)
             return {"selected": False, "error": str(exc)}
 
+    def delete_conversation(self, session_id: str) -> dict:
+        """Delete a conversation and keep an active empty session available."""
+        try:
+            self._ensure_session()
+            path = self._conversation_db_path()
+            _db.init_db(path)
+            conn = _db.get_write_connection(path)
+            try:
+                if not _db.conversation_session_exists(conn, session_id):
+                    return {"deleted": False, "error": "conversation not found"}
+                was_active = session_id == self._session_id
+                deleted = _db.delete_conversation_session(conn, session_id)
+                if was_active:
+                    sessions = _db.list_conversation_sessions(conn)
+                    replacement = (
+                        sessions[0] if sessions else _db.create_conversation_session(conn)
+                    )
+                    self._session_id = str(replacement["id"])
+                conn.commit()
+            finally:
+                conn.close()
+            return {"deleted": deleted > 0, "id": session_id, "active_id": self._session_id}
+        except Exception as exc:
+            logger.warning("delete_conversation failed", exc_info=True)
+            return {"deleted": False, "error": str(exc)}
+
     def get_status(self) -> dict:
         """Lightweight readiness probe — checks whether the LLM budget is available.
 
@@ -334,6 +366,50 @@ class ChatBridge:
             logger.warning("toggle_skill(%r) failed", name, exc_info=True)
             return {"name": name, "enabled": False, "error": str(exc)}
 
+    def import_skill(self, filename: str, content: str) -> dict:
+        """Import an uploaded Markdown skill into the writable user directory."""
+        try:
+            from news_agent.agent.skills import import_skill as _import_skill
+
+            result = _import_skill(filename, content)
+            self.toggle_skill(str(result["name"]), True)
+            result["enabled"] = True
+            return result
+        except Exception as exc:
+            logger.warning("import_skill failed", exc_info=True)
+            return {"error": str(exc)}
+
+    def delete_skill(self, name: str) -> dict:
+        """Delete an imported skill and remove its enabled-state entry."""
+        try:
+            from news_agent.agent.config import load_agent_config, save_agent_config
+            from news_agent.agent.skills import delete_skill as _delete_skill
+
+            if not _delete_skill(name):
+                return {"deleted": False, "error": "built-in or missing skill"}
+            cfg = load_agent_config()
+            cfg.setdefault("skills_enabled", {}).pop(name, None)
+            save_agent_config(cfg)
+            return {"deleted": True, "name": name}
+        except Exception as exc:
+            logger.warning("delete_skill failed", exc_info=True)
+            return {"deleted": False, "error": str(exc)}
+
+    def save_system_prompt(self, prompt: str) -> dict:
+        """Persist the optional base system prompt for the conversation agent."""
+        try:
+            from news_agent.agent.config import load_agent_config, save_agent_config
+
+            if not isinstance(prompt, str) or len(prompt) > 50_000:
+                return {"saved": False, "error": "system prompt is too long"}
+            cfg = load_agent_config()
+            cfg["system_prompt"] = prompt
+            save_agent_config(cfg)
+            return {"saved": True, "system_prompt": prompt}
+        except Exception as exc:
+            logger.warning("save_system_prompt failed", exc_info=True)
+            return {"saved": False, "error": str(exc)}
+
     # ── Agent config management ─────────────────────────────────────────
 
     def get_agent_config(self) -> dict:
@@ -385,6 +461,16 @@ class ChatBridge:
         except Exception:
             logger.warning("save_mcp_servers failed", exc_info=True)
             return []
+
+    def test_mcp_server(self, server: dict) -> dict:
+        """Run a non-destructive MCP initialize probe for one server."""
+        try:
+            from news_agent.agent.mcp_config import probe_mcp_server
+
+            return probe_mcp_server(server)
+        except Exception as exc:
+            logger.warning("test_mcp_server failed", exc_info=True)
+            return {"ok": False, "message": str(exc)}
 
 
 # ── Smoke test (no real token consumption) ──────────────────────────

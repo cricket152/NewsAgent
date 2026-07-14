@@ -158,6 +158,16 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("Failed to load config", exc_info=True)
         return 1
 
+    # Keep the independent worker registered whenever the tray app starts.
+    # Registration is idempotent (/F), so this also repairs deleted tasks.
+    try:
+        from news_agent.scheduler import register_worker_tasks
+
+        if not register_worker_tasks(list(cfg.worker_schedule)):
+            logger.warning("Worker task registration reported failures")
+    except Exception:
+        logger.warning("Could not register daily worker tasks", exc_info=True)
+
     # Apply proxy if configured (httpx + openai SDK both respect these env vars)
     if cfg.proxy:
         os.environ["HTTP_PROXY"] = cfg.proxy

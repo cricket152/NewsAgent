@@ -23,6 +23,16 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Task Scheduler invokes this file by absolute path, with an arbitrary
+# working directory (usually ``C:\Windows\System32``).  In a source checkout
+# that means the ``src`` directory is not on ``sys.path`` yet.  Bootstrap it
+# before importing the package so scheduled refreshes work in development as
+# well as in an installed/frozen build.
+if __package__ in (None, ""):
+    _src_dir = Path(__file__).resolve().parents[1]
+    if str(_src_dir) not in sys.path:
+        sys.path.insert(0, str(_src_dir))
+
 from news_agent.config import load_config
 from news_agent.db import (
     cleanup_old_articles,

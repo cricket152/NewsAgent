@@ -13,6 +13,10 @@ from news_agent.logging_setup import get_logger
 logger = get_logger()
 
 
+def _default_config() -> dict:
+    return {"skills_enabled": {}, "mcp_servers": [], "system_prompt": ""}
+
+
 def get_agent_config_path() -> Path:
     """Return the path to ``agent_config.json`` under the AppData directory."""
     return Path(os.environ["APPDATA"]) / "news-agent" / "agent_config.json"
@@ -28,12 +32,12 @@ def load_agent_config() -> dict:
     path = get_agent_config_path()
     try:
         if not path.exists():
-            return {"skills_enabled": {}, "mcp_servers": []}
+            return _default_config()
         with open(path, "r", encoding="utf-8") as fh:
             return json.load(fh)
     except (json.JSONDecodeError, OSError):
         logger.warning("failed to load agent_config, using defaults", exc_info=True)
-        return {"skills_enabled": {}, "mcp_servers": []}
+        return _default_config()
 
 
 def save_agent_config(cfg: dict) -> None:

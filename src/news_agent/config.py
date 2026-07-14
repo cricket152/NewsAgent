@@ -131,7 +131,11 @@ def get_config_path() -> Path:
     cwd_path = Path("config.yaml")
     if cwd_path.exists():
         return cwd_path.resolve()
-    return _appdata_config_path()
+    appdata_path = _appdata_config_path()
+    if appdata_path.exists():
+        return appdata_path
+    project_path = Path(__file__).resolve().parents[2] / "config.yaml"
+    return project_path if project_path.exists() else appdata_path
 
 
 def _resolve_config_path(path: Path | None) -> Path | None:
@@ -149,6 +153,12 @@ def _resolve_config_path(path: Path | None) -> Path | None:
     appdata_path = _appdata_config_path()
     if appdata_path.exists():
         return appdata_path
+
+    # Task Scheduler starts from an arbitrary directory, so also look beside
+    # the source package for source-based installations.
+    project_path = Path(__file__).resolve().parents[2] / "config.yaml"
+    if project_path.exists():
+        return project_path
 
     return None
 

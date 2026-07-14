@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -28,6 +29,19 @@ DEFAULT_WIDTH = 800
 DEFAULT_HEIGHT = 600
 
 logger = get_logger()
+
+
+def _format_local_time(value: object) -> str:
+    """Format an ISO-8601 timestamp in the user's local timezone."""
+    if not isinstance(value, str) or not value:
+        return str(value or "")
+    try:
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+        return timestamp.astimezone().strftime("%H:%M:%S")
+    except (TypeError, ValueError):
+        return value
 
 # Windows DWM attributes used to keep the native title bar aligned with the
 # application's light interface. Unsupported attributes are ignored safely on
@@ -66,6 +80,7 @@ def _get_env() -> jinja2.Environment:
             loader=jinja2.FileSystemLoader(str(TEMPLATE_DIR)),
             autoescape=jinja2.select_autoescape(["html"]),
         )
+        _jinja_env.filters["local_time"] = _format_local_time
     return _jinja_env
 
 

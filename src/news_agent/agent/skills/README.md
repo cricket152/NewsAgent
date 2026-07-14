@@ -31,9 +31,9 @@ defined here serve as the scaffold for that feature.
 
 ## Writing a skill
 
-Every skill file should contain **only the system-prompt content** — no YAML
-front-matter, no metadata block.  Keep files short (5–20 lines) so they remain
-easy to compose at runtime.
+Skill files may contain plain system-prompt content or standard YAML
+frontmatter with `name` and `description` fields. Keep the instruction body
+focused so multiple enabled skills remain easy to compose at runtime.
 
 Example:
 

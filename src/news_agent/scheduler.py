@@ -53,7 +53,12 @@ def _resolve_pythonw() -> Path:
 
 
 def _resolve_worker_py() -> Path:
-    """Return absolute path to ``worker.py`` (sibling of this module)."""
+    """Return the worker entry point for source or frozen installations."""
+    if getattr(sys, "frozen", False):
+        # PyInstaller builds place NewsAgent.exe and NewsAgentWorker.exe in
+        # the same directory.  Launching the main executable with worker.py
+        # would start the tray UI instead of the scheduled refresh process.
+        return Path(sys.executable).with_name("NewsAgentWorker.exe")
     return (Path(__file__).parent / "worker.py").resolve()
 
 
@@ -109,7 +114,10 @@ def register_worker_tasks(schedule_times: list[str] | None = None) -> bool:
         # Advanced features (StartWhenAvailable, ExecutionTimeLimit) are not
         # settable via this form, but ``worker.py`` own PID-lock + 15-min
         # watchdog cover overlap & hang protection internally.
-        task_command = f'"{pythonw_path}" "{worker_py_path}"'
+        if getattr(sys, "frozen", False):
+            task_command = f'"{worker_py_path}"'
+        else:
+            task_command = f'"{pythonw_path}" "{worker_py_path}"'
 
         try:
             result = subprocess.run(

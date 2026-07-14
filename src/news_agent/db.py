@@ -288,6 +288,13 @@ def conversation_session_exists(conn: sqlite3.Connection, session_id: str) -> bo
     ).fetchone() is not None
 
 
+def delete_conversation_session(conn: sqlite3.Connection, session_id: str) -> int:
+    """Delete a saved conversation and all messages belonging to it."""
+    conn.execute("DELETE FROM conversations WHERE session_id = ?", (session_id,))
+    cursor = conn.execute("DELETE FROM conversation_sessions WHERE id = ?", (session_id,))
+    return cursor.rowcount
+
+
 def update_conversation_session_title(
     conn: sqlite3.Connection, session_id: str, title: str
 ) -> None:
