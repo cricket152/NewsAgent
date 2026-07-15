@@ -130,18 +130,23 @@
     </div>
 
     {# User-managed application shortcuts #}
-    <section class="shortcut-launcher" aria-labelledby="shortcut-heading">
+    <section id="shortcut-launcher" class="shortcut-launcher" aria-labelledby="shortcut-heading">
       <div class="shortcut-heading">
-        <span id="shortcut-heading">快捷启动</span>
+        <div>
+          <span class="shortcut-kicker">QUICK LAUNCH</span>
+          <span id="shortcut-heading">应用快捷方式</span>
+        </div>
         <button id="shortcut-manage" class="shortcut-manage" type="button"
                 onclick="toggleShortcutManage()" hidden>管理</button>
       </div>
-      <div id="shortcut-list" class="shortcut-list" aria-live="polite">
-        <button class="shortcut-tile shortcut-add" type="button"
-                onclick="chooseApplicationShortcut()" title="添加应用">
-          <span class="shortcut-icon shortcut-add-icon" aria-hidden="true">+</span>
-          <span class="shortcut-name">添加</span>
-        </button>
+      <div class="shortcut-dock">
+        <div id="shortcut-list" class="shortcut-list is-loading" aria-live="polite"
+             aria-busy="true">
+          <span class="shortcut-skeleton" aria-hidden="true"></span>
+          <span class="shortcut-skeleton" aria-hidden="true"></span>
+          <span class="shortcut-skeleton" aria-hidden="true"></span>
+          <span class="shortcut-skeleton" aria-hidden="true"></span>
+        </div>
       </div>
     </section>
 
@@ -376,17 +381,15 @@ function toggleSection(btn, sectionId) {
 window.__applicationShortcuts = [];
 window.__shortcutManageMode = false;
 
-function shortcutMonogram(name) {
-  var text = String(name || '').trim();
-  return text ? text.charAt(0).toUpperCase() : 'A';
-}
-
 function renderApplicationShortcuts(items) {
   var list = document.getElementById('shortcut-list');
   var manage = document.getElementById('shortcut-manage');
+  var launcher = document.getElementById('shortcut-launcher');
   if (!list) return;
   window.__applicationShortcuts = Array.isArray(items) ? items : [];
   if (window.__applicationShortcuts.length === 0) window.__shortcutManageMode = false;
+  list.classList.remove('is-loading');
+  list.setAttribute('aria-busy', 'false');
   list.replaceChildren();
 
   window.__applicationShortcuts.forEach(function(item) {
@@ -398,6 +401,7 @@ function renderApplicationShortcuts(items) {
     launch.className = 'shortcut-tile';
     launch.title = item.available ? item.name : item.name + '（程序不可用）';
     launch.setAttribute('aria-label', '启动 ' + item.name);
+    launch.setAttribute('data-shortcut-id', item.id);
     launch.disabled = !item.available;
     launch.addEventListener('click', function() { launchApplicationShortcut(item.id); });
 
@@ -409,8 +413,8 @@ function renderApplicationShortcuts(items) {
       image.alt = '';
       icon.appendChild(image);
     } else {
-      icon.classList.add('shortcut-monogram');
-      icon.textContent = shortcutMonogram(item.name);
+      icon.classList.add('shortcut-fallback-icon');
+      icon.setAttribute('aria-hidden', 'true');
     }
 
     var label = document.createElement('span');
@@ -447,11 +451,18 @@ function renderApplicationShortcuts(items) {
     manage.textContent = window.__shortcutManageMode ? '完成' : '管理';
     manage.classList.toggle('active', window.__shortcutManageMode);
   }
+  if (launcher) launcher.classList.toggle('is-managing', window.__shortcutManageMode);
 }
 
 function loadApplicationShortcuts() {
   if (!window.pywebview || !window.pywebview.api) return;
+  var list = document.getElementById('shortcut-list');
+  if (list) {
+    list.classList.add('is-loading');
+    list.setAttribute('aria-busy', 'true');
+  }
   window.pywebview.api.list_shortcuts().then(renderApplicationShortcuts).catch(function() {
+    renderApplicationShortcuts([]);
     showToast('快捷入口加载失败');
   });
 }
@@ -470,12 +481,27 @@ function chooseApplicationShortcut() {
 
 function launchApplicationShortcut(shortcutId) {
   if (!window.pywebview || !window.pywebview.api) return;
+  var launch = document.querySelector('.shortcut-tile[data-shortcut-id="' + shortcutId + '"]');
+  if (launch) {
+    launch.classList.add('is-launching');
+    launch.disabled = true;
+  }
   window.pywebview.api.launch_shortcut(shortcutId).then(function(result) {
+    if (launch) {
+      launch.classList.remove('is-launching');
+      launch.disabled = false;
+    }
     if (!result || !result.launched) {
       showToast((result && result.message) || '无法启动该程序');
       loadApplicationShortcuts();
     }
-  }).catch(function() { showToast('无法启动该程序'); });
+  }).catch(function() {
+    if (launch) {
+      launch.classList.remove('is-launching');
+      launch.disabled = false;
+    }
+    showToast('无法启动该程序');
+  });
 }
 
 function deleteApplicationShortcut(item) {

@@ -8,6 +8,7 @@ import io
 import json
 import os
 import uuid
+from ctypes import wintypes
 from functools import lru_cache
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -194,39 +195,86 @@ def _extract_windows_icon(target: str) -> Image.Image:
 
     class SHFILEINFO(ctypes.Structure):
         _fields_ = [
-            ("hIcon", ctypes.c_void_p),
+            ("hIcon", wintypes.HICON),
             ("iIcon", ctypes.c_int),
-            ("dwAttributes", ctypes.c_ulong),
+            ("dwAttributes", wintypes.DWORD),
             ("szDisplayName", ctypes.c_wchar * 260),
             ("szTypeName", ctypes.c_wchar * 80),
         ]
 
     class BITMAPINFOHEADER(ctypes.Structure):
         _fields_ = [
-            ("biSize", ctypes.c_ulong),
-            ("biWidth", ctypes.c_long),
-            ("biHeight", ctypes.c_long),
-            ("biPlanes", ctypes.c_ushort),
-            ("biBitCount", ctypes.c_ushort),
-            ("biCompression", ctypes.c_ulong),
-            ("biSizeImage", ctypes.c_ulong),
-            ("biXPelsPerMeter", ctypes.c_long),
-            ("biYPelsPerMeter", ctypes.c_long),
-            ("biClrUsed", ctypes.c_ulong),
-            ("biClrImportant", ctypes.c_ulong),
+            ("biSize", wintypes.DWORD),
+            ("biWidth", wintypes.LONG),
+            ("biHeight", wintypes.LONG),
+            ("biPlanes", wintypes.WORD),
+            ("biBitCount", wintypes.WORD),
+            ("biCompression", wintypes.DWORD),
+            ("biSizeImage", wintypes.DWORD),
+            ("biXPelsPerMeter", wintypes.LONG),
+            ("biYPelsPerMeter", wintypes.LONG),
+            ("biClrUsed", wintypes.DWORD),
+            ("biClrImportant", wintypes.DWORD),
+        ]
+
+    class RGBQUAD(ctypes.Structure):
+        _fields_ = [
+            ("rgbBlue", ctypes.c_ubyte),
+            ("rgbGreen", ctypes.c_ubyte),
+            ("rgbRed", ctypes.c_ubyte),
+            ("rgbReserved", ctypes.c_ubyte),
         ]
 
     class BITMAPINFO(ctypes.Structure):
-        _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", ctypes.c_ulong * 3)]
+        _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", RGBQUAD * 1)]
 
     shell32 = ctypes.windll.shell32
     user32 = ctypes.windll.user32
     gdi32 = ctypes.windll.gdi32
-    shell32.SHGetFileInfoW.restype = ctypes.c_void_p
-    user32.GetDC.restype = ctypes.c_void_p
-    gdi32.CreateCompatibleDC.restype = ctypes.c_void_p
-    gdi32.CreateDIBSection.restype = ctypes.c_void_p
-    gdi32.SelectObject.restype = ctypes.c_void_p
+
+    shell32.SHGetFileInfoW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        ctypes.POINTER(SHFILEINFO),
+        wintypes.UINT,
+        wintypes.UINT,
+    ]
+    shell32.SHGetFileInfoW.restype = ctypes.c_size_t
+    user32.GetDC.argtypes = [wintypes.HWND]
+    user32.GetDC.restype = wintypes.HDC
+    user32.ReleaseDC.argtypes = [wintypes.HWND, wintypes.HDC]
+    user32.ReleaseDC.restype = ctypes.c_int
+    user32.DrawIconEx.argtypes = [
+        wintypes.HDC,
+        ctypes.c_int,
+        ctypes.c_int,
+        wintypes.HICON,
+        ctypes.c_int,
+        ctypes.c_int,
+        wintypes.UINT,
+        wintypes.HBRUSH,
+        wintypes.UINT,
+    ]
+    user32.DrawIconEx.restype = wintypes.BOOL
+    user32.DestroyIcon.argtypes = [wintypes.HICON]
+    user32.DestroyIcon.restype = wintypes.BOOL
+    gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
+    gdi32.CreateCompatibleDC.restype = wintypes.HDC
+    gdi32.DeleteDC.argtypes = [wintypes.HDC]
+    gdi32.DeleteDC.restype = wintypes.BOOL
+    gdi32.CreateDIBSection.argtypes = [
+        wintypes.HDC,
+        ctypes.POINTER(BITMAPINFO),
+        wintypes.UINT,
+        ctypes.POINTER(ctypes.c_void_p),
+        wintypes.HANDLE,
+        wintypes.DWORD,
+    ]
+    gdi32.CreateDIBSection.restype = wintypes.HBITMAP
+    gdi32.SelectObject.argtypes = [wintypes.HDC, wintypes.HGDIOBJ]
+    gdi32.SelectObject.restype = wintypes.HGDIOBJ
+    gdi32.DeleteObject.argtypes = [wintypes.HGDIOBJ]
+    gdi32.DeleteObject.restype = wintypes.BOOL
 
     info = SHFILEINFO()
     flags = 0x000000100 | 0x000000000  # SHGFI_ICON | SHGFI_LARGEICON
@@ -235,20 +283,33 @@ def _extract_windows_icon(target: str) -> Image.Image:
     ) or not info.hIcon:
         raise OSError("SHGetFileInfoW failed")
 
-    screen_dc = user32.GetDC(None)
-    memory_dc = gdi32.CreateCompatibleDC(screen_dc)
-    bits = ctypes.c_void_p()
-    bitmap_info = BITMAPINFO()
-    bitmap_info.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
-    bitmap_info.bmiHeader.biWidth = ICON_SIZE
-    bitmap_info.bmiHeader.biHeight = -ICON_SIZE
-    bitmap_info.bmiHeader.biPlanes = 1
-    bitmap_info.bmiHeader.biBitCount = 32
-    bitmap = gdi32.CreateDIBSection(
-        screen_dc, ctypes.byref(bitmap_info), 0, ctypes.byref(bits), None, 0
-    )
-    previous = gdi32.SelectObject(memory_dc, bitmap)
+    screen_dc: wintypes.HDC | None = None
+    memory_dc: wintypes.HDC | None = None
+    bitmap: wintypes.HBITMAP | None = None
+    previous: wintypes.HGDIOBJ | None = None
     try:
+        screen_dc = user32.GetDC(None)
+        if not screen_dc:
+            raise OSError("GetDC failed")
+        memory_dc = gdi32.CreateCompatibleDC(screen_dc)
+        if not memory_dc:
+            raise OSError("CreateCompatibleDC failed")
+
+        bits = ctypes.c_void_p()
+        bitmap_info = BITMAPINFO()
+        bitmap_info.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+        bitmap_info.bmiHeader.biWidth = ICON_SIZE
+        bitmap_info.bmiHeader.biHeight = -ICON_SIZE
+        bitmap_info.bmiHeader.biPlanes = 1
+        bitmap_info.bmiHeader.biBitCount = 32
+        bitmap = gdi32.CreateDIBSection(
+            screen_dc, ctypes.byref(bitmap_info), 0, ctypes.byref(bits), None, 0
+        )
+        if not bitmap or not bits.value:
+            raise OSError("CreateDIBSection failed")
+        previous = gdi32.SelectObject(memory_dc, bitmap)
+        if not previous:
+            raise OSError("SelectObject failed")
         if not user32.DrawIconEx(
             memory_dc, 0, 0, info.hIcon, ICON_SIZE, ICON_SIZE, 0, None, 0x0003
         ):
@@ -258,8 +319,12 @@ def _extract_windows_icon(target: str) -> Image.Image:
             "RGBA", (ICON_SIZE, ICON_SIZE), pixels, "raw", "BGRA", 0, 1
         ).copy()
     finally:
-        gdi32.SelectObject(memory_dc, previous)
-        gdi32.DeleteObject(bitmap)
-        gdi32.DeleteDC(memory_dc)
-        user32.ReleaseDC(None, screen_dc)
+        if memory_dc and previous:
+            gdi32.SelectObject(memory_dc, previous)
+        if bitmap:
+            gdi32.DeleteObject(bitmap)
+        if memory_dc:
+            gdi32.DeleteDC(memory_dc)
+        if screen_dc:
+            user32.ReleaseDC(None, screen_dc)
         user32.DestroyIcon(info.hIcon)

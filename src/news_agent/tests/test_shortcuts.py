@@ -16,6 +16,7 @@ from news_agent.shortcuts import (
     list_shortcuts_for_ui,
     load_shortcuts,
 )
+from news_agent.viewer import render_html
 
 
 def _make_executable(tmp_path: Path, name: str = "Sample App.exe") -> Path:
@@ -112,3 +113,23 @@ def test_bridge_choose_shortcut_handles_cancel() -> None:
     bridge.set_window_provider(FakeWindow)
 
     assert bridge.choose_shortcut() == {"added": False, "cancelled": True}
+
+
+def test_list_shortcuts_includes_extracted_icon(tmp_path: Path) -> None:
+    config_path = tmp_path / "shortcuts.json"
+    executable = _make_executable(tmp_path)
+    add_shortcut(executable, path=config_path)
+
+    icon = "data:image/png;base64,cG5n"
+    with patch("news_agent.shortcuts._icon_data_url", return_value=icon):
+        listed = list_shortcuts_for_ui(config_path)
+
+    assert listed[0]["icon"] == icon
+
+
+def test_shortcut_template_has_no_letter_icon_fallback() -> None:
+    html = render_html({})
+
+    assert "shortcutMonogram" not in html
+    assert "shortcut-monogram" not in html
+    assert "shortcut-fallback-icon" in html
