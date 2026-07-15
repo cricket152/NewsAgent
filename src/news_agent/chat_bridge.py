@@ -125,6 +125,7 @@ class ChatBridge:
         self._db_path = db_path
         self._refresh_runner = _NewsRefreshRunner()
         self._session_id: str | None = None
+        self._window_provider: Callable[[], object | None] | None = None
 
     def _conversation_db_path(self) -> Path:
         return (
@@ -155,6 +156,68 @@ class ChatBridge:
     def set_refresh_callback(self, callback: Callable[[], None]) -> None:
         """Set the view reload callback run after a successful refresh."""
         self._refresh_runner.set_on_success(callback)
+
+    def set_window_provider(self, callback: Callable[[], object | None]) -> None:
+        """Set the lazy window provider used for native file dialogs."""
+        self._window_provider = callback
+
+    # -- application shortcuts --
+
+    def list_shortcuts(self) -> list[dict]:
+        """Return user-managed application shortcuts for the home page."""
+        try:
+            from news_agent.shortcuts import list_shortcuts_for_ui
+
+            return list_shortcuts_for_ui()
+        except Exception:
+            logger.warning("list_shortcuts failed", exc_info=True)
+            return []
+
+    def choose_shortcut(self) -> dict:
+        """Open a native application picker and save the selected target."""
+        try:
+            import webview
+
+            from news_agent.shortcuts import add_shortcut
+
+            window = self._window_provider() if self._window_provider else None
+            if window is None:
+                return {"added": False, "error": "应用窗口尚未就绪。"}
+            selected = window.create_file_dialog(
+                webview.FileDialog.OPEN,
+                allow_multiple=False,
+                file_types=("应用程序与快捷方式 (*.exe;*.lnk)",),
+            )
+            if not selected:
+                return {"added": False, "cancelled": True}
+            item = add_shortcut(selected[0])
+            return {"added": True, "shortcut": item}
+        except ValueError as exc:
+            return {"added": False, "error": str(exc)}
+        except Exception:
+            logger.warning("choose_shortcut failed", exc_info=True)
+            return {"added": False, "error": "无法添加该应用。"}
+
+    def delete_shortcut(self, shortcut_id: str) -> dict:
+        """Delete one application shortcut by its stored ID."""
+        try:
+            from news_agent.shortcuts import delete_shortcut
+
+            deleted = delete_shortcut(str(shortcut_id))
+            return {"deleted": deleted, "id": str(shortcut_id)}
+        except Exception:
+            logger.warning("delete_shortcut failed", exc_info=True)
+            return {"deleted": False, "error": "无法删除快捷入口。"}
+
+    def launch_shortcut(self, shortcut_id: str) -> dict:
+        """Launch one stored application shortcut."""
+        try:
+            from news_agent.shortcuts import launch_shortcut
+
+            return launch_shortcut(str(shortcut_id))
+        except Exception:
+            logger.warning("launch_shortcut failed", exc_info=True)
+            return {"launched": False, "message": "无法启动该程序。"}
 
     def refresh_news(self) -> dict:
         """Start a background worker run for news retrieval and AI summaries."""

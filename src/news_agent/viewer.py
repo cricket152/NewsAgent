@@ -212,6 +212,7 @@ def create_window(
     # --- JS API bridge for chat tab ---
     bridge = _get_chat_bridge(db_path=db_path)
     bridge.set_refresh_callback(refresh_window)
+    bridge.set_window_provider(get_window)
 
     # --- Resolve window geometry ---
     width = DEFAULT_WIDTH
