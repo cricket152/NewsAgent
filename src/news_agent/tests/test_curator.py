@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
 from news_agent.config import Config, SourceEntry
 from news_agent.curator import run_curator
-from news_agent.db import init_db
+from news_agent.db import get_write_connection, init_db, insert_article
 
 FAKE_ARTICLE = {
     "url": "https://example.com/1",
@@ -66,13 +67,18 @@ def test_run_curator_returns_all_domains(tmp_db_path: Path) -> None:
         with patch("news_agent.fetchers.fortune.fetch_fortune", return_value=_MOCK_FORTUNE):
             with patch("news_agent.fetchers.weather.fetch_weather", return_value=None):
                 with patch("news_agent.curator._dispatch_fetcher") as mock_dispatch:
-                    mock_dispatch.return_value = [
-                        dict(FAKE_ARTICLE, domain=d)
-                        for d in ["github_trending", "programming", "bilibili_hot"]
+                    mock_dispatch.side_effect = lambda source, config: [
+                        dict(FAKE_ARTICLE, domain=source.domain)
                     ]
                     result = run_curator(cfg, db_path=tmp_db_path)
 
     assert "articles_by_domain" in result
+    assert set(result["articles_by_domain"]) == {
+        "github_trending",
+        "programming",
+        "bilibili_hot",
+    }
+    assert all(result["articles_by_domain"].values())
     assert result["headlines_only_mode"] is False
     assert len(result["daily_summary"]) > 0
 
@@ -106,7 +112,10 @@ def test_run_curator_keeps_a_local_summary_when_llm_fails(tmp_db_path: Path) -> 
     with patch("news_agent.curator.chat", side_effect=RuntimeError("blocked")):
         with patch("news_agent.fetchers.fortune.fetch_fortune", return_value=_MOCK_FORTUNE):
             with patch("news_agent.fetchers.weather.fetch_weather", return_value=None):
-                with patch("news_agent.curator._dispatch_fetcher", return_value=[dict(FAKE_ARTICLE)]):
+                with patch(
+                    "news_agent.curator._dispatch_fetcher",
+                    return_value=[dict(FAKE_ARTICLE)],
+                ):
                     result = run_curator(cfg, db_path=tmp_db_path)
 
     assert result["daily_summary"]
@@ -138,6 +147,88 @@ def test_run_curator_graceful_degradation(tmp_db_path: Path) -> None:
                 ):
                     result = run_curator(cfg, db_path=tmp_db_path)
 
-    assert call_count == 3
+    assert call_count == 4
     assert "articles_by_domain" in result
+    assert all(result["articles_by_domain"].values())
     assert not result["headlines_only_mode"]
+
+
+def test_run_curator_uses_cached_domain_after_live_fetch_fails(
+    tmp_db_path: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """A transiently unavailable source must not erase its domain section."""
+    init_db(tmp_db_path)
+    cfg = _make_config_with_sources()
+    state_dir = tmp_path / "news-agent"
+    state_dir.mkdir()
+    cached_article = dict(
+        FAKE_ARTICLE,
+        url="https://example.com/cached-bilibili",
+        domain="bilibili_hot",
+        ai_summary="cached summary",
+    )
+    (state_dir / "latest_state.json").write_text(
+        json.dumps({"articles_by_domain": {"bilibili_hot": [cached_article]}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+
+    def _dispatch(source, config):
+        if source.domain == "bilibili_hot":
+            return []
+        return [dict(FAKE_ARTICLE, domain=source.domain)]
+
+    with patch("news_agent.curator.chat", return_value="ok"):
+        with patch("news_agent.fetchers.fortune.fetch_fortune", return_value=_MOCK_FORTUNE):
+            with patch("news_agent.fetchers.weather.fetch_weather", return_value=None):
+                with patch("news_agent.curator._dispatch_fetcher", side_effect=_dispatch):
+                    result = run_curator(cfg, db_path=tmp_db_path)
+
+    assert all(result["articles_by_domain"].values())
+    assert result["articles_by_domain"]["bilibili_hot"][0]["url"] == cached_article["url"]
+    assert result["articles_by_domain"]["bilibili_hot"][0]["ai_summary"] == "ok"
+
+
+def test_run_curator_uses_database_when_latest_state_lacks_domain(
+    tmp_db_path: Path, tmp_path: Path, monkeypatch
+) -> None:
+    """SQLite history is the fallback when the latest bundle is already incomplete."""
+    init_db(tmp_db_path)
+    cfg = _make_config_with_sources()
+    conn = get_write_connection(tmp_db_path)
+    try:
+        insert_article(
+            conn,
+            url="https://example.com/database-bilibili",
+            title="Cached database article",
+            summary="Cached summary",
+            source="https://api.bilibili.com",
+            domain="bilibili_hot",
+            published_at=None,
+            summary_ai="Cached AI summary",
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    state_dir = tmp_path / "news-agent"
+    state_dir.mkdir()
+    (state_dir / "latest_state.json").write_text(
+        json.dumps({"articles_by_domain": {}}), encoding="utf-8"
+    )
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+
+    def _dispatch(source, config):
+        if source.domain == "bilibili_hot":
+            return []
+        return [dict(FAKE_ARTICLE, domain=source.domain)]
+
+    with patch("news_agent.curator.chat", return_value="ok"):
+        with patch("news_agent.fetchers.fortune.fetch_fortune", return_value=_MOCK_FORTUNE):
+            with patch("news_agent.fetchers.weather.fetch_weather", return_value=None):
+                with patch("news_agent.curator._dispatch_fetcher", side_effect=_dispatch):
+                    result = run_curator(cfg, db_path=tmp_db_path)
+
+    articles = result["articles_by_domain"]["bilibili_hot"]
+    assert articles
+    assert articles[0]["url"] == "https://example.com/database-bilibili"

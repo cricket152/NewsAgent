@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from news_agent.config import SourceEntry
-from news_agent.fetchers.github_trending import fetch_github_trending
+from news_agent.fetchers.github_trending import (
+    _select_daily_sample,
+    fetch_github_trending,
+)
 
 MOCK_HTML = b"""<html><body>
 <article class="Box-row">
@@ -80,3 +85,39 @@ def test_fetch_github_trending_non_200(httpx_mock) -> None:
 
     result = fetch_github_trending(source)
     assert result == []
+
+
+def test_daily_sample_is_stable_and_limited_to_five() -> None:
+    entries = [
+        {"url": f"https://github.com/owner/repo-{index}"}
+        for index in range(20)
+    ]
+
+    first = _select_daily_sample(entries, sample_date=date(2026, 7, 15))
+    repeated = _select_daily_sample(entries, sample_date=date(2026, 7, 15))
+
+    assert len(first) == 5
+    assert first == repeated
+    assert len({entry["url"] for entry in first}) == 5
+    assert all(entry in entries for entry in first)
+
+
+def test_daily_sample_changes_across_days() -> None:
+    entries = [
+        {"url": f"https://github.com/owner/repo-{index}"}
+        for index in range(20)
+    ]
+
+    first_day = _select_daily_sample(entries, sample_date=date(2026, 7, 15))
+    next_day = _select_daily_sample(entries, sample_date=date(2026, 7, 16))
+
+    assert first_day != next_day
+
+
+def test_daily_sample_keeps_all_entries_when_fewer_than_five() -> None:
+    entries = [
+        {"url": f"https://github.com/owner/repo-{index}"}
+        for index in range(3)
+    ]
+
+    assert _select_daily_sample(entries, sample_date=date(2026, 7, 15)) == entries

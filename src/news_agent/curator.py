@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from news_agent.config import Config, SourceEntry
+from news_agent.db import get_read_only_connection, get_recent_articles
 from news_agent.llm import (
     CostCeilingExceeded,
     chat,
@@ -26,6 +27,7 @@ from news_agent.logging_setup import get_logger
 logger = get_logger()
 
 MAX_ARTICLES_PER_DOMAIN = 5
+FETCH_ATTEMPTS_PER_SOURCE = 2
 
 # The home page renders Markdown safely and styles bold text as an important
 # highlight. Restrict the model to standard Markdown rather than raw HTML.
@@ -99,6 +101,87 @@ def _dispatch_fetcher(
             "fetcher failed: source=%s type=%s", source.url, source.type
         )
         return []
+
+
+def _fetch_source_with_retry(
+    source: SourceEntry, config: Config
+) -> list[dict[str, Any]]:
+    """Fetch one source again when a transient failure returns no entries."""
+    for attempt in range(1, FETCH_ATTEMPTS_PER_SOURCE + 1):
+        entries = _dispatch_fetcher(source, config)
+        if entries:
+            return entries
+        if attempt < FETCH_ATTEMPTS_PER_SOURCE:
+            logger.warning(
+                "source returned no articles; retrying: domain=%s source=%s",
+                source.domain,
+                source.url,
+            )
+    return []
+
+
+def _load_cached_articles(
+    domains: set[str], db_path: Path | None
+) -> dict[str, list[dict[str, Any]]]:
+    """Load the last usable articles for domains whose live fetch failed."""
+    cached: dict[str, list[dict[str, Any]]] = {}
+
+    try:
+        import json
+        import os
+
+        state_path = (
+            Path(os.environ.get("APPDATA", "")) / "news-agent" / "latest_state.json"
+        )
+        with state_path.open("r", encoding="utf-8") as fh:
+            state = json.load(fh)
+        by_domain = state.get("articles_by_domain") if isinstance(state, dict) else None
+        if isinstance(by_domain, dict):
+            for domain in domains:
+                articles = by_domain.get(domain)
+                if isinstance(articles, list) and articles:
+                    cached[domain] = [
+                        dict(article)
+                        for article in articles[:MAX_ARTICLES_PER_DOMAIN]
+                        if isinstance(article, dict)
+                    ]
+    except (OSError, ValueError, TypeError):
+        logger.debug("latest-state article fallback miss", exc_info=True)
+
+    missing = domains - cached.keys()
+    if not missing or db_path is None:
+        return cached
+
+    try:
+        conn = get_read_only_connection(db_path)
+        try:
+            for domain in missing:
+                rows = get_recent_articles(
+                    conn,
+                    domain=domain,
+                    hours=30 * 24,
+                    limit=MAX_ARTICLES_PER_DOMAIN,
+                )
+                if rows:
+                    cached[domain] = [
+                        {
+                            "url": row["url"],
+                            "title": row["title"],
+                            "summary": row.get("summary") or "",
+                            "domain": domain,
+                            "source_url": row.get("source") or "",
+                            "published_at": row.get("published_at") or "",
+                            "fetched_at": row.get("fetched_at") or "",
+                            "ai_summary": row.get("summary_ai") or "",
+                        }
+                        for row in rows
+                    ]
+        finally:
+            conn.close()
+    except Exception:
+        logger.warning("database article fallback failed", exc_info=True)
+
+    return cached
 
 
 def _make_emergency_fortune() -> dict[str, Any]:
@@ -274,20 +357,43 @@ def _run_curator_impl(
             weather = cached_weather
 
     # 3. Fetch articles per source
-    articles_by_domain_raw: defaultdict[str, list[dict[str, Any]]] = (
-        defaultdict(list)
-    )
+    configured_domains = {source.domain for source in config.sources}
+    articles_by_domain_raw: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
 
     for source in config.sources:
-        entries = _dispatch_fetcher(source, config)
+        entries = _fetch_source_with_retry(source, config)
         for article in entries:
-            articles_by_domain_raw[article["domain"]].append(article)
+            # The configured source owns its domain. Do not let malformed or
+            # cross-labelled upstream data silently move an article elsewhere.
+            normalized = dict(article)
+            normalized["domain"] = source.domain
+            articles_by_domain_raw[source.domain].append(normalized)
+
+    missing_domains = {
+        domain for domain in configured_domains if not articles_by_domain_raw[domain]
+    }
+    if missing_domains:
+        cached_articles = _load_cached_articles(missing_domains, db_path)
+        for domain in missing_domains:
+            fallback = cached_articles.get(domain, [])
+            if fallback:
+                logger.warning(
+                    "using %d cached articles after live fetch failed: domain=%s",
+                    len(fallback),
+                    domain,
+                )
+                articles_by_domain_raw[domain].extend(fallback)
+            else:
+                logger.error(
+                    "no live or cached articles available: domain=%s", domain
+                )
 
     # 4. Aggregate by domain: dedupe, sort, truncate
-    seen_urls: set[str] = set()
     articles_by_domain: dict[str, list[dict[str, Any]]] = {}
 
-    for domain, articles in articles_by_domain_raw.items():
+    for domain in sorted(configured_domains | articles_by_domain_raw.keys()):
+        articles = articles_by_domain_raw[domain]
+        seen_urls: set[str] = set()
         unique: list[dict[str, Any]] = []
         for article in articles:
             url_key = article["url"].lower().strip()

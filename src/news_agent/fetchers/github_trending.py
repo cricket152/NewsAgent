@@ -8,7 +8,9 @@ outputs uniformly.
 
 GitHub's trending page lists ~24 repositories per range.  We extract repo
 name, description, star count, fork count, and primary language from the
-structured ``Box-row`` article elements.
+structured ``Box-row`` article elements, then take a date-stable random sample
+from the daily list.  Repeated refreshes stay consistent within the same day,
+while the selection changes over time.
 
 Returns ≤ *MAX_ENTRIES* per call.  Never raises — logs warnings on errors
 and returns an empty list.
@@ -16,7 +18,9 @@ and returns an empty list.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import hashlib
+import random
+from datetime import date, datetime, timezone
 from typing import Any
 
 import httpx
@@ -27,7 +31,7 @@ from news_agent.logging_setup import get_logger
 
 logger = get_logger()
 
-MAX_ENTRIES = 20
+MAX_ENTRIES = 5
 _TRENDING_URL = "https://github.com/trending?since=daily"
 _HEADERS = {
     "User-Agent": (
@@ -64,6 +68,25 @@ def _find_stat(soup: BeautifulSoup, path: str) -> str:
     return text
 
 
+def _select_daily_sample(
+    entries: list[dict[str, Any]],
+    *,
+    sample_date: date | None = None,
+) -> list[dict[str, Any]]:
+    """Select up to ``MAX_ENTRIES`` entries consistently for one local day."""
+    if len(entries) <= MAX_ENTRIES:
+        return entries
+
+    day = sample_date or date.today()
+    seed_material = "\n".join(
+        [day.isoformat(), *(str(entry.get("url", "")) for entry in entries)]
+    )
+    seed = int.from_bytes(
+        hashlib.sha256(seed_material.encode("utf-8")).digest()[:8], "big"
+    )
+    return random.Random(seed).sample(entries, MAX_ENTRIES)
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -77,7 +100,8 @@ def fetch_github_trending(source: SourceEntry) -> list[dict[str, Any]]:
             entries (typically ``"programming"``).
 
     Returns:
-        Up to ``MAX_ENTRIES`` normalised dicts, each with keys ``url``,
+        A date-stable random sample of up to ``MAX_ENTRIES`` normalised dicts,
+        each with keys ``url``,
         ``title``, ``summary``, ``domain``, ``source_url``,
         ``published_at``, and ``fetched_at``.  Returns an empty list on any
         error — **never raises**.
@@ -112,7 +136,7 @@ def fetch_github_trending(source: SourceEntry) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     fetched_at = _utcnow_iso()
 
-    for article in articles[:MAX_ENTRIES]:
+    for article in articles:
         # Repo name + link: h2 a
         link_tag = article.select_one("h2 a")
         if link_tag is None:
@@ -171,7 +195,7 @@ def fetch_github_trending(source: SourceEntry) -> list[dict[str, Any]]:
             }
         )
 
-    return entries
+    return _select_daily_sample(entries)
 
 
 # ---------------------------------------------------------------------------

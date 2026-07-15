@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from news_agent.agent.conversation import clear_history, get_history, send_message
 from news_agent.db import (
@@ -11,6 +12,7 @@ from news_agent.db import (
     get_recent_conversations,
     get_write_connection,
     init_db,
+    insert_article,
     insert_conversation,
 )
 
@@ -92,3 +94,60 @@ def test_send_message_empty_input(tmp_db_path: Path) -> None:
     init_db(tmp_db_path)
     response = send_message("   ", db_path=tmp_db_path)
     assert response == "请输入消息"
+
+
+def test_send_message_includes_latest_news_bundle(
+    tmp_db_path: Path, sample_bundle: dict
+) -> None:
+    init_db(tmp_db_path)
+    (tmp_db_path.parent / "latest_state.json").write_text(
+        json.dumps(sample_bundle, ensure_ascii=False), encoding="utf-8"
+    )
+    chat = MagicMock(return_value="已读取新闻")
+
+    with patch("news_agent.agent.conversation.llm.chat", chat):
+        with patch(
+            "news_agent.agent.conversation.llm.get_today_remaining_tokens",
+            return_value=50000,
+        ):
+            response = send_message("今天有哪些新闻？", db_path=tmp_db_path)
+
+    assert response == "已读取新闻"
+    messages = chat.call_args.kwargs["messages"]
+    system_content = messages[0]["content"]
+    assert sample_bundle["daily_summary"] in system_content
+    assert "github_trending article 0" in system_content
+    assert "不可信外部内容" in system_content
+
+
+def test_send_message_falls_back_to_recent_database_articles(
+    tmp_db_path: Path,
+) -> None:
+    init_db(tmp_db_path)
+    conn = get_write_connection(tmp_db_path)
+    try:
+        insert_article(
+            conn,
+            url="https://example.com/database-news",
+            title="Database fallback news",
+            summary="Fallback summary",
+            source="https://example.com/feed",
+            domain="programming",
+            published_at=None,
+            summary_ai="Fallback AI summary",
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    chat = MagicMock(return_value="已读取数据库新闻")
+
+    with patch("news_agent.agent.conversation.llm.chat", chat):
+        with patch(
+            "news_agent.agent.conversation.llm.get_today_remaining_tokens",
+            return_value=50000,
+        ):
+            send_message("最近有什么新闻？", db_path=tmp_db_path)
+
+    system_content = chat.call_args.kwargs["messages"][0]["content"]
+    assert "Database fallback news" in system_content
+    assert "Fallback AI summary" in system_content
