@@ -1,6 +1,6 @@
 # NewsAgent · 今日播报
 
-<img src="resources/1.png" alt="NewsAgent 图标" width="360">
+<img src="src/news_agent/img/3f0656e1a4a1ead747d08882af20a2da.png" alt="NewsAgent 图标" width="360">
 
 <p> <img src="https://img.shields.io/badge/version-0.1.0-ff69b4" alt="版本"> <img src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4" alt="支持平台"> <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 版本">  <img src="https://img.shields.io/badge/AI-OpenAI%20Compatible-412991?logo=openai&logoColor=white" alt="AI 接口"> <img src="https://img.shields.io/badge/license-MIT-green" alt="许可证"> </p>
 

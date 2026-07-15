@@ -18,7 +18,8 @@ env/
 # Project data (SQLite databases, logs)
 data/*.db
 data/*.db-*
-data/*.db-*
+scripts/data/*.db
+scripts/data/*.db-*
 
 # Logs directory
 logs/
@@ -27,6 +28,7 @@ logs/
 .env
 *.env
 !.env.example
+config.yaml
 !config.yaml.example
 
 # Build artifacts
@@ -38,6 +40,7 @@ dist/
 
 # Linter cache
 .ruff_cache/
+.pytest_cache/
 
 # OS files
 .DS_Store
