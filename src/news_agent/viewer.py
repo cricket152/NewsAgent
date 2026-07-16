@@ -84,14 +84,16 @@ def _get_env() -> jinja2.Environment:
     return _jinja_env
 
 
-def _get_chat_bridge(db_path: Path | None = None) -> ChatBridge:
+def _get_chat_bridge(
+    db_path: Path | None = None, weather_city: str | None = None
+) -> ChatBridge:
     """Return the module-level :class:`ChatBridge` singleton.
 
     Constructed once on first call; subsequent calls ignore *db_path*.
     """
     global _chat_bridge
     if _chat_bridge is None:
-        _chat_bridge = ChatBridge(db_path=db_path)
+        _chat_bridge = ChatBridge(db_path=db_path, weather_city=weather_city)
         logger.debug("ChatBridge initialised")
     return _chat_bridge
 
@@ -210,7 +212,8 @@ def create_window(
     html = render_html(bundle)
 
     # --- JS API bridge for chat tab ---
-    bridge = _get_chat_bridge(db_path=db_path)
+    weather_city = config.weather_city if config is not None else None
+    bridge = _get_chat_bridge(db_path=db_path, weather_city=weather_city)
     bridge.set_refresh_callback(refresh_window)
     bridge.set_window_provider(get_window)
 

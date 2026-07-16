@@ -265,6 +265,8 @@ a:focus-visible {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+  .fortune-card:hover,
+  .weather-card:hover { transform: none !important; }
 }
 
 .page-intro {
@@ -350,9 +352,11 @@ a:focus-visible {
 
 .fortune-card {
   position: relative;
-  border: 0;
+  border: 2px solid rgba(255, 255, 255, 0.94);
   background: rgba(255, 253, 247, 0.78);
-  box-shadow: 0 8px 26px rgba(91, 47, 64, 0.055);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.98) inset,
+    0 8px 26px rgba(91, 47, 64, 0.055);
 }
 .fortune-card::after {
   content: "黄历";
@@ -400,15 +404,24 @@ a:focus-visible {
   flex: none;
   flex-direction: column;
   justify-content: center;
-  border: 0;
+  border: 2px solid rgba(255, 255, 255, 0.94);
   background: linear-gradient(145deg, rgba(255, 247, 250, .96), rgba(255, 238, 244, .72));
-  box-shadow: 0 8px 26px rgba(91, 47, 64, 0.055);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.98) inset,
+    0 8px 26px rgba(91, 47, 64, 0.055);
 }
 .fortune-card:hover,
-.weather-card:hover { box-shadow: 0 14px 34px rgba(91, 47, 64, 0.075); }
+.weather-card:hover {
+  z-index: 2;
+  transform: scale(1.018);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 1) inset,
+    0 16px 38px rgba(91, 47, 64, 0.12);
+}
 .weather-city { margin-bottom: 3px; color: var(--accent-strong); font-size: 13px; font-weight: 700; }
 .weather-desc { color: #7d5362; font-size: 12px; }
 .weather-temp { margin: 5px 0 0; color: var(--ink); font-size: 21px; font-weight: 700; line-height: 1.25; }
+.weather-updated { margin-top: 2px; color: var(--muted); font-size: 9px; }
 .weather-none { color: var(--muted); font-style: normal; }
 
 .shortcut-launcher {

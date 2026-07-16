@@ -133,3 +133,23 @@ def test_shortcut_template_has_no_letter_icon_fallback() -> None:
     assert "shortcutMonogram" not in html
     assert "shortcut-monogram" not in html
     assert "shortcut-fallback-icon" in html
+
+
+def test_template_refreshes_current_weather_without_refreshing_news() -> None:
+    html = render_html({})
+
+    assert "get_current_weather" in html
+    assert "window.setInterval(refreshCurrentWeather, 10 * 60 * 1000)" in html
+    assert "if (!document.hidden) refreshCurrentWeather()" in html
+    assert "renderCurrentWeather" in html
+
+
+def test_bridge_fetches_current_weather_for_configured_city() -> None:
+    weather = {"current": {"temperature": 30.5}}
+    bridge = ChatBridge(weather_city="Shanghai")
+
+    with patch("news_agent.fetchers.weather.fetch_weather", return_value=weather) as fetch:
+        result = bridge.get_current_weather()
+
+    assert result == {"success": True, "weather": weather}
+    fetch.assert_called_once_with("Shanghai", timeout=10.0)

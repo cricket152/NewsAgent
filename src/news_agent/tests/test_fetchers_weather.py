@@ -6,6 +6,12 @@ from news_agent.fetchers.weather import fetch_weather
 
 GEOCODE_RESPONSE = {"results": [{"latitude": 39.9, "longitude": 116.4, "name": "Beijing"}]}
 FORECAST_RESPONSE = {
+    "current": {
+        "time": "2026-07-16T14:45",
+        "temperature_2m": 30.5,
+        "apparent_temperature": 32.1,
+        "weather_code": 2,
+    },
     "daily": {
         "temperature_2m_max": [32.0],
         "temperature_2m_min": [22.0],
@@ -22,7 +28,7 @@ def test_fetch_weather_returns_dict_shape(httpx_mock) -> None:
         status_code=200,
     )
     httpx_mock.add_response(
-        url="https://api.open-meteo.com/v1/forecast?latitude=39.9&longitude=116.4&daily=temperature_2m_max%2Ctemperature_2m_min%2Cprecipitation_sum%2Cweathercode&timezone=auto&forecast_days=1",
+        url="https://api.open-meteo.com/v1/forecast?latitude=39.9&longitude=116.4&current=temperature_2m%2Capparent_temperature%2Cweather_code&daily=temperature_2m_max%2Ctemperature_2m_min%2Cprecipitation_sum%2Cweathercode&timezone=auto&forecast_days=1",
         json=FORECAST_RESPONSE,
         status_code=200,
     )
@@ -30,6 +36,10 @@ def test_fetch_weather_returns_dict_shape(httpx_mock) -> None:
     result = fetch_weather("Beijing")
     assert result is not None
     assert result["city"] == "Beijing"
+    assert result["current"]["temperature"] == 30.5
+    assert result["current"]["apparent_temperature"] == 32.1
+    assert result["current"]["weather_description"] == "部分多云"
+    assert result["current"]["observed_at"] == "2026-07-16T14:45"
     assert result["today"]["temp_max"] == 32.0
     assert result["today"]["temp_min"] == 22.0
     assert result["today"]["weather_description"] == "晴"

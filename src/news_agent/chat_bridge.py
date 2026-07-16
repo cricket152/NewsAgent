@@ -119,10 +119,13 @@ class ChatBridge:
     instead so the JS side always gets a value.
     """
 
-    def __init__(self, db_path: Path | None = None) -> None:
+    def __init__(
+        self, db_path: Path | None = None, weather_city: str | None = None
+    ) -> None:
         # If caller (viewer.create_window) passes a concrete path, use it.
         # Else, conversation.py's internal _resolve_db() handles the default.
         self._db_path = db_path
+        self._weather_city = weather_city
         self._refresh_runner = _NewsRefreshRunner()
         self._session_id: str | None = None
         self._window_provider: Callable[[], object | None] | None = None
@@ -226,6 +229,21 @@ class ChatBridge:
     def get_refresh_status(self) -> dict:
         """Return current manual-refresh state for the home-page button."""
         return self._refresh_runner.status()
+
+    def get_current_weather(self) -> dict:
+        """Fetch current weather without running the news/LLM refresh pipeline."""
+        try:
+            from news_agent.config import load_config
+            from news_agent.fetchers.weather import fetch_weather
+
+            city = self._weather_city or load_config().weather_city
+            weather = fetch_weather(city, timeout=10.0)
+            if weather is None:
+                return {"success": False, "message": "天气更新暂时不可用"}
+            return {"success": True, "weather": weather}
+        except Exception:
+            logger.warning("get_current_weather failed", exc_info=True)
+            return {"success": False, "message": "天气更新暂时不可用"}
 
     def get_autostart_status(self) -> dict:
         """Return whether NewsAgent starts automatically after sign-in."""

@@ -110,21 +110,26 @@
       {# Weather card #}
       <div class="card weather-card">
         {% if weather %}
-          <div class="weather-city">
-            {% if "晴" in weather.today.weather_description %}☀️
-            {% elif "多云" in weather.today.weather_description %}⛅
-            {% elif "阴" in weather.today.weather_description %}☁️
-            {% elif "雪" in weather.today.weather_description %}🌨️
-            {% elif "雾" in weather.today.weather_description %}🌫️
-            {% elif "雷" in weather.today.weather_description %}⛈️
-            {% elif "雨" in weather.today.weather_description %}🌧️
+          {% set conditions = weather.current | default(weather.today, true) %}
+          <div class="weather-city"><span id="weather-icon">
+            {% if "晴" in conditions.weather_description %}☀️
+            {% elif "多云" in conditions.weather_description %}⛅
+            {% elif "阴" in conditions.weather_description %}☁️
+            {% elif "雪" in conditions.weather_description %}🌨️
+            {% elif "雾" in conditions.weather_description %}🌫️
+            {% elif "雷" in conditions.weather_description %}⛈️
+            {% elif "雨" in conditions.weather_description %}🌧️
             {% else %}🌤️{% endif %}
-            {{ weather.resolved_name | default(weather.city, true) }}
+            </span><span id="weather-city">{{ weather.resolved_name | default(weather.city, true) }}</span>
           </div>
-          <div class="weather-desc">{{ weather.today.weather_description }}</div>
-          <div class="weather-temp">{{ weather.today.temp_min }}° - {{ weather.today.temp_max }}°C</div>
+          <div id="weather-desc" class="weather-desc">{{ conditions.weather_description }}</div>
+          <div id="weather-temp" class="weather-temp">{% if weather.current %}{{ weather.current.temperature }}°C{% else %}{{ weather.today.temp_min }}° - {{ weather.today.temp_max }}°C{% endif %}</div>
+          <div id="weather-updated" class="weather-updated">{% if weather.current %}实况 · {{ weather.fetched_at | local_time }}{% else %}今日预报{% endif %}</div>
         {% else %}
-          <div class="weather-none">❓ 无法获取天气</div>
+          <div class="weather-city weather-none"><span id="weather-icon">❓</span> <span id="weather-city">无法获取天气</span></div>
+          <div id="weather-desc" class="weather-desc"></div>
+          <div id="weather-temp" class="weather-temp"></div>
+          <div id="weather-updated" class="weather-updated"></div>
         {% endif %}
       </div>
     </div>
@@ -1193,13 +1198,62 @@ function pollRefreshStatus(button, status) {
   });
 }
 
+function weatherIcon(description) {
+  if (description.indexOf('晴') !== -1) return '☀️';
+  if (description.indexOf('多云') !== -1) return '⛅';
+  if (description.indexOf('阴') !== -1) return '☁️';
+  if (description.indexOf('雪') !== -1) return '🌨️';
+  if (description.indexOf('雾') !== -1) return '🌫️';
+  if (description.indexOf('雷') !== -1) return '⛈️';
+  if (description.indexOf('雨') !== -1) return '🌧️';
+  return '🌤️';
+}
+
+function renderCurrentWeather(weather) {
+  if (!weather || !weather.current) return;
+  var current = weather.current;
+  var icon = document.getElementById('weather-icon');
+  var city = document.getElementById('weather-city');
+  var description = document.getElementById('weather-desc');
+  var temperature = document.getElementById('weather-temp');
+  var updated = document.getElementById('weather-updated');
+  if (icon) icon.textContent = weatherIcon(current.weather_description || '');
+  if (city) city.textContent = weather.resolved_name || weather.city || '';
+  if (description) description.textContent = current.weather_description || '';
+  if (temperature) temperature.textContent = current.temperature + '°C';
+  if (updated) {
+    var timestamp = new Date(weather.fetched_at);
+    var timeText = Number.isNaN(timestamp.getTime())
+      ? ''
+      : timestamp.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    updated.textContent = timeText ? '实况 · ' + timeText : '实时天气';
+  }
+}
+
+function refreshCurrentWeather() {
+  ensureWebViewReady(function() {
+    window.pywebview.api.get_current_weather().then(function(result) {
+      if (result && result.success) renderCurrentWeather(result.weather);
+    }).catch(function() {
+      // Keep the last successful weather visible during transient network failures.
+    });
+  });
+}
+
 /* ═══════════════════════════════════════════
    Init on DOMContentLoaded
    ═══════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', function() {
   showTab('tab-date');
   renderSummaryMarkdown();
-  ensureWebViewReady(loadApplicationShortcuts);
+  ensureWebViewReady(function() {
+    loadApplicationShortcuts();
+    refreshCurrentWeather();
+  });
+  window.setInterval(refreshCurrentWeather, 10 * 60 * 1000);
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) refreshCurrentWeather();
+  });
 
   document.querySelectorAll('.nav-bar .nav-item').forEach(function(btn) {
     btn.addEventListener('click', function() {

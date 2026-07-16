@@ -1,9 +1,8 @@
-"""Task T12: open-meteo weather forecast fetcher — free, no API key.
+"""Task T12: open-meteo current weather + forecast fetcher — free, no API key.
 
 Geocodes a city name → latitude/longitude, then fetches a single-day
-forecast (max/min temperature, precipitation, weather code).  Returns
-a normalised dict on success, ``None`` on any failure (caller displays
-"无法获取天气").
+forecast and current conditions. Returns a normalised dict on success,
+``None`` on any failure (caller displays "无法获取天气").
 
 Includes 3-retry loop (1.5 s gap) on transient upstream errors
 (502/503/504, connect/timeout). Default timeout raised from 5 s → 10 s
@@ -137,6 +136,7 @@ def _fetch_forecast(
     params = {
         "latitude": lat,
         "longitude": lon,
+        "current": "temperature_2m,apparent_temperature,weather_code",
         "daily": "temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode",
         "timezone": "auto",
         "forecast_days": 1,
@@ -149,7 +149,11 @@ def _fetch_forecast(
         logger.warning("weather forecast failed for %s: %s", city, exc)
         return None
 
+    current = data.get("current")
     daily = data.get("daily")
+    if not current or not isinstance(current, dict):
+        logger.warning("weather forecast failed for %s: missing current data", city)
+        return None
     if not daily or not isinstance(daily, dict):
         logger.warning("weather forecast failed for %s: missing daily data", city)
         return None
@@ -168,11 +172,15 @@ def _fetch_forecast(
         return None
 
     try:
+        current_temperature = float(current["temperature_2m"])
+        apparent_temperature = float(current["apparent_temperature"])
+        current_weather_code = int(current["weather_code"])
+        observed_at = str(current["time"])
         temp_max = float(temp_max_arr[0])
         temp_min = float(temp_min_arr[0])
         precip = float(prec_arr[0])
         weather_code = int(code_arr[0])
-    except (ValueError, TypeError) as exc:
+    except (KeyError, ValueError, TypeError) as exc:
         logger.warning("weather forecast failed for %s: %s", city, exc)
         return None
 
@@ -181,6 +189,13 @@ def _fetch_forecast(
         "resolved_name": resolved_name,
         "latitude": lat,
         "longitude": lon,
+        "current": {
+            "temperature": current_temperature,
+            "apparent_temperature": apparent_temperature,
+            "weather_code": current_weather_code,
+            "weather_description": _wmo_description(current_weather_code),
+            "observed_at": observed_at,
+        },
         "today": {
             "temp_max": temp_max,
             "temp_min": temp_min,
@@ -210,7 +225,7 @@ def _is_retryable(exc: BaseException) -> bool:
 def fetch_weather(
     city: str, timeout: float = 10.0, _retry_attempts: int = _RETRY_ATTEMPTS
 ) -> dict[str, Any] | None:
-    """Fetch today's weather forecast for *city* from open-meteo.
+    """Fetch current conditions and today's forecast for *city* from open-meteo.
 
     Args:
         city: City name for geocoding (e.g. ``"Beijing"``).
@@ -221,7 +236,8 @@ def fetch_weather(
 
     Returns:
         A dict with keys ``city``, ``resolved_name``, ``latitude``,
-        ``longitude``, ``today`` (nested), ``fetched_at``, and ``source``.
+        ``longitude``, ``current`` (nested), ``today`` (nested),
+        ``fetched_at``, and ``source``.
         Returns ``None`` on any failure — **never raises**.
     """
     with httpx.Client(timeout=httpx.Timeout(timeout)) as client:
